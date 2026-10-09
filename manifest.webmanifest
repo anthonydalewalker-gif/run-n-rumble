@@ -1,0 +1,17 @@
+{
+  "name": "Run N Rumble",
+  "short_name": "Run N Rumble",
+  "description": "A cartoon side-scrolling adventure starring Radish, Orange and Pickle.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#3fb6ff",
+  "theme_color": "#3fb6ff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
