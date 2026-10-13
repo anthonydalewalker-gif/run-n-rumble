@@ -4,7 +4,7 @@
   const D = window.Draw, Input = window.Input, Sound = window.Sound;
   const VH = 360;              // logical screen height; width adapts to the screen's aspect ratio
   const GRAV = 1700, MAX_FALL = 900;
-  const STARS_PER_LIFE = 5, START_LIVES = 5, POWER_TIME = 10;
+  const STARS_PER_LIFE = 5, START_LIVES = 5, POWER_TIME = 10, WIND_PUSH = 75;
 
   const CHARACTERS = {
     radish: { key: 'radish', name: 'Radish', speed: 235, jump: 650, hitsPerStar: 1, w: 22, h: 34, desc: 'Fastest runner', stats: [3, 2, 1] },
@@ -46,12 +46,16 @@
     state: 'title', t: 0, stateT: 0,
     charKey: CHARACTERS[save.char] ? save.char : 'radish',
     levelIdx: 0, score: 0, levelStartScore: 0, lives: START_LIVES,
-    message: null, result: null, god: false, fade: 0
+    message: null, result: null, god: false, rescue: false, rescues: 0, fade: 0
   };
   let W = null;   // current world
   let P = null;   // player
 
-  function setState(s) { G.state = s; G.stateT = 0; }
+  function setState(s) {
+    // Entering gameplay: ignore any finger that was already down (e.g. the one that tapped PLAY/RETRY).
+    if ((s === 'intro' || s === 'play') && ['title', 'select', 'levels', 'paused', 'gameover', 'complete', 'victory'].includes(G.state)) Input.ignoreBefore = performance.now();
+    G.state = s; G.stateT = 0;
+  }
   const rand = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const approach = (v, target, d) => v < target ? Math.min(v + d, target) : Math.max(v - d, target);
@@ -60,28 +64,38 @@
   function buildLevel(idx) {
     const def = window.LEVELS[idx];
     const theme = window.THEMES[def.theme];
+    ['blocks', 'clouds', 'bugs', 'birds', 'snakes', 'rocks', 'seeds', 'flytraps', 'vines', 'lightning', 'wind'].forEach(k => { if (!def[k]) def[k] = []; });
+    const cloudy = theme.solid === 'cloud';
     const w = {
-      def, theme, solids: [], gaps: [], ents: [], parts: [], pops: [], decor: [],
+      def, theme, solids: [], gaps: [], ents: [], parts: [], pops: [], decor: [], streaks: [],
+      wind: { phase: 'calm', t: 2.5 }, boltT: 2, flash: 0,
       seeds: 0, time: def.time, camX: 0, shake: 0, t: 0,
       rockT: 2, powerT: def.power.first, birdTriggers: def.birds.map(b => ({ x: b[0], seed: !!b[1], done: false })),
       banner: null, needMsgT: 0, won: false
     };
-    def.ground.forEach(([x0, x1, top]) => w.solids.push({ x: x0, y: top, w: x1 - x0, h: 600, kind: 'ground', bump: 0 }));
-    def.blocks.forEach(([x, top, bw]) => w.solids.push({ x, y: top, w: bw, h: 22, kind: 'block', bump: 0 }));
+    def.ground.forEach(([x0, x1, top]) => w.solids.push({ x: x0, y: top, w: x1 - x0, h: 600, kind: cloudy ? 'cloud' : 'ground', style: 'bank', main: true, bump: 0, alpha: 1 }));
+    def.blocks.forEach(([x, top, bw]) => w.solids.push({ x, y: top, w: bw, h: 22, kind: cloudy ? 'cloud' : 'block', style: 'static', bump: 0, alpha: 1 }));
+    def.clouds.forEach(([x, top, cw, style, o]) => {
+      o = o || {};
+      w.solids.push({ x, y: top, w: cw, h: 20, kind: 'cloud', style, bx: x, by: top, ax: o.ax || 0, ay: o.ay || 0, period: o.period || 4, bump: 0, alpha: 1, standT: 0, off: false, respawnT: 0, squash: 0, dx: 0, dy: 0 });
+    });
     const gs = def.ground.slice().sort((a, b) => a[0] - b[0]);
     for (let i = 0; i < gs.length - 1; i++) if (gs[i + 1][0] > gs[i][1]) w.gaps.push({ x0: gs[i][1], x1: gs[i + 1][0], passed: false });
     W = w;
     def.bugs.forEach(([x, seed]) => w.ents.push(makeBug(x, !!seed)));
     def.snakes.forEach(([x]) => w.ents.push(makeSnake(x)));
     def.seeds.forEach(([x]) => { const s = makeSeed(x, surfaceAt(x) - 16); s.state = 'rest'; w.ents.push(s); });
+    def.flytraps.forEach(([x], i) => w.ents.push({ type: 'flytrap', x, y: null, w: 30, h: 26, open: 0, warn: false, phase: window.hash01(i + x) * 3.6, state: 'alive', passed: false, t: 0 }));
+    def.vines.forEach(([x, count], i) => w.ents.push({ type: 'vine', x, y: null, count, gap: 26, hs: new Array(count).fill(0), phase: window.hash01(i * 7 + 3) * 3.6, passed: false, t: 0 }));
     w.tree = { x: def.tree, y: surfaceAt(def.tree, true), grow: 0 };
     // decoration
     let k = 0;
     def.ground.forEach(([x0, x1, top]) => {
       for (let x = x0 + 30; x < x1 - 30; x += 40 + window.hash01(k++) * 90) {
         if (Math.abs(x - def.tree) < 80) continue;
+        if (def.vines.some(([vx, n]) => x > vx - 20 && x < vx + n * 26 + 10)) continue;
         const r = window.hash01(k++);
-        w.decor.push({ x, y: top, kind: r < 0.5 ? 'flower' : r < 0.8 ? 'bush' : 'mushroom', col: ['#ff6fa8', '#ffffff', '#b47aff', '#ff8a3a'][Math.floor(window.hash01(k++) * 4)] });
+        w.decor.push({ x, y: top, kind: r < 0.5 ? 'flower' : (r < 0.8 || cloudy) ? 'bush' : 'mushroom', col: ['#ff6fa8', '#ffffff', '#b47aff', '#ff8a3a'][Math.floor(window.hash01(k++) * 4)] });
       }
     });
     return w;
@@ -89,7 +103,8 @@
   function surfaceAt(x, groundOnly) {
     let best = null;
     for (const s of W.solids) {
-      if (groundOnly && s.kind !== 'ground') continue;
+      if (s.off) continue;
+      if (groundOnly && !s.main) continue;
       if (x >= s.x && x <= s.x + s.w && (best === null || s.y < best)) best = s.y;
     }
     return best;
@@ -128,17 +143,20 @@
   function moveBody(b, dt) {
     b.hitWall = 0; b.hitHead = null;
     const wasGround = b.onGround; b.onGround = false;
-    b.x += b.vx * dt;
+    const mvx = b.vx + (b.pushVx || 0);
+    b.x += mvx * dt;
     for (const s of W.solids) {
+      if (s.off) continue;
       if (overlaps(b.x - b.w / 2, b.y - b.h, b.w, b.h, s.x, s.y, s.w, s.h)) {
-        if (b.vx > 0) { b.x = s.x - b.w / 2 - 0.01; b.hitWall = 1; }
-        else if (b.vx < 0) { b.x = s.x + s.w + b.w / 2 + 0.01; b.hitWall = -1; }
+        if (mvx > 0) { b.x = s.x - b.w / 2 - 0.01; b.hitWall = 1; }
+        else if (mvx < 0) { b.x = s.x + s.w + b.w / 2 + 0.01; b.hitWall = -1; }
         else if (b.x < s.x + s.w / 2) { b.x = s.x - b.w / 2 - 0.01; } else { b.x = s.x + s.w + b.w / 2 + 0.01; }
         b.vx = 0;
       }
     }
     b.y += b.vy * dt;
     for (const s of W.solids) {
+      if (s.off) continue;
       if (overlaps(b.x - b.w / 2, b.y - b.h, b.w, b.h, s.x, s.y, s.w, s.h)) {
         if (b.vy >= 0) { b.y = s.y; b.vy = 0; b.onGround = true; b.groundS = s; }
         else { b.y = s.y + s.h + b.h; b.vy = 0; b.hitHead = s; }
@@ -147,6 +165,7 @@
     // Stay glued when walking over tiny steps downward
     if (!b.onGround && wasGround && b.vy >= 0) {
       for (const s of W.solids) {
+        if (s.off) continue;
         if (b.x + b.w / 2 > s.x && b.x - b.w / 2 < s.x + s.w && s.y >= b.y && s.y - b.y < 4) { b.y = s.y; b.onGround = true; b.vy = 0; break; }
       }
     }
@@ -207,6 +226,9 @@
     } else if (e.type === 'snake') {
       e.state = 'dead'; Sound.play('poof');
       burst(e.x, e.y - 20, 18, 'spark', '#8be05a', 180);
+    } else if (e.type === 'flytrap') {
+      e.state = 'dead'; e.dead = true; Sound.play('poof');
+      burst(e.x, e.y - 14, 14, 'feather', '#5fbf3a', 140); burst(e.x, e.y - 14, 6, 'spark', '#ff6f8a', 120);
     } else if (e.type === 'fire') {
       e.dead = true; Sound.play('smash'); burst(e.x, e.y, 10, 'spark', '#ffb03a', 120);
     } else if (e.type === 'rock') {
@@ -239,7 +261,7 @@
       const acc = (P.onGround ? 1500 : 1000) * (Math.sign(P.vx) !== dir && P.vx !== 0 ? 1.8 : 1);
       P.vx = approach(P.vx, dir * speed, acc * dt); P.face = dir;
     } else {
-      P.vx = approach(P.vx, 0, (P.onGround ? 1800 : 450) * dt);
+      P.vx = approach(P.vx, 0, (P.onGround ? 3200 : 1600) * dt);   // release = stop quickly (no momentum drift)
     }
     if (Input.jumpPressed) P.jumpBuf = 0.13;
     P.jumpBuf -= dt;
@@ -251,12 +273,20 @@
     }
     if (P.jumping && !Input.jump && P.vy < -260) P.vy = -260;  // short hop when the button is released early
     P.vy = Math.min(P.vy + GRAV * dt, MAX_FALL);
+    // ride moving clouds
+    if (P.onGround && P.groundS && !P.groundS.off && (P.groundS.dx || P.groundS.dy)) { P.x += P.groundS.dx; P.y += P.groundS.dy; }
+    // wind gusts push you back while you're in the air
+    P.pushVx = (W.wind.phase === 'gust' && !P.onGround) ? -WIND_PUSH : 0;
     const wasAir = !P.onGround;
     P.prevY = P.y;
     P.prevTop = P.y - P.h;
     moveBody(P, dt);
     if (P.hitHead) bumpBlock(P.hitHead);
-    if (P.onGround && wasAir) {
+    if (P.onGround && P.groundS && P.groundS.style === 'bounce') {
+      P.vy = -C.jump * 1.3; P.onGround = false; P.jumping = false; P.coyote = 0;
+      P.groundS.squash = 1; P.sx = 0.75; P.sy = 1.3;
+      Sound.play('boing');
+    } else if (P.onGround && wasAir) {
       P.jumping = false; P.sx = 1.3; P.sy = 0.75;
       burst(P.x, P.y, 4, 'dust', '#e8dcc0', 50);
     }
@@ -271,7 +301,7 @@
     P.trail.forEach(tr => tr.a -= dt * 2); P.trail = P.trail.filter(tr => tr.a > 0);
     // fell into a gap
     if (P.y > VH + 60) {
-      if (G.god) { P.y = surfaceAt(P.x) || 0; if (!surfaceAt(P.x)) { P.x += 120; P.y = (surfaceAt(P.x) || 300); } P.vy = 0; return; }
+      if (G.rescue) { G.rescues++; (G.rescueAt = G.rescueAt || []).push(Math.round(P.x)); let x = P.x; while (surfaceAt(x, true) === null && x < W.def.length) x += 20; P.x = x + 20; P.y = surfaceAt(P.x, true) - 1; P.vy = 0; return; }
       P.stars = 0; die('Fell in a gap!');
     }
     // gap passing bonus
@@ -322,9 +352,12 @@
         case 'rock': updateRock(e, dt, pb); break;
         case 'seed': updateSeed(e, dt, pb); break;
         case 'orb': updateOrb(e, dt, pb); break;
+        case 'flytrap': updateFlytrap(e, dt, pb); break;
+        case 'vine': updateVine(e, dt, pb); break;
+        case 'bolt': updateBolt(e, dt, pb); break;
       }
       // passing bonus for live enemies
-      if (!e.passed && !P.dead && (e.type === 'bug' && e.state === 'walk' && e.active || e.type === 'bird' && e.state === 'fly' || e.type === 'snake' && e.state === 'alive')) {
+      if (!e.passed && !P.dead && (e.type === 'bug' && e.state === 'walk' && e.active || e.type === 'bird' && e.state === 'fly' || e.type === 'snake' && e.state === 'alive' || e.type === 'flytrap' && e.state === 'alive')) {
         if (pCenterX - e.x > e.w / 2 + P.w / 2 + 6 && pCenterX - e.x < 120) { e.passed = true; addScore(500, e.x, e.y - 34); }
       }
     }
@@ -495,6 +528,102 @@
     }
   }
 
+
+  // ---------- level 2/3 hazards ----------
+  const TRAP_CYCLE = 3.6;
+  function updateFlytrap(e, dt, pb) {
+    const tt = (W.t + e.phase) % TRAP_CYCLE;
+    // 0-1.8 closed, 1.4-1.8 warning wiggle, 1.8-2.05 opening, 2.05-3.35 open, 3.35-3.6 closing
+    e.open = tt < 1.8 ? 0 : tt < 2.05 ? (tt - 1.8) / 0.25 : tt < 3.35 ? 1 : 1 - (tt - 3.35) / 0.25;
+    e.warn = tt > 1.4 && tt < 1.8;
+    if (e.open > 0.95 && !e.chomped) { e.chomped = true; if (Math.abs(e.x - P.x) < VW * 0.6) Sound.play('chomp'); }
+    if (e.open < 0.05) e.chomped = false;
+    e.h = 26 + e.open * 26;
+    const res = stompCheck(e, pb, e.y - e.h);
+    if (!res || P.dead) return;
+    if (res === 'power') smash(e, 'power');
+    else if (res === 'stomp' && e.open < 0.3) { smash(e, 'stomp'); stompBounce(); }
+    else { hurt(e); if (res === 'stomp') { P.vy = -380; P.onGround = false; } }
+  }
+  const VINE_CYCLE = 3.6, VINE_H = 100, VINE_STAGGER = 0.12;
+  function vineHeight(e, i, time) {
+    const tt = ((time + e.phase - i * VINE_STAGGER) % VINE_CYCLE + VINE_CYCLE) % VINE_CYCLE;
+    // 0-1.5 up, 1.5-1.85 lowering, 1.85-3.25 down (safe), 3.25-3.6 rising
+    if (tt < 1.5) return VINE_H;
+    if (tt < 1.85) return VINE_H * (1 - (tt - 1.5) / 0.35);
+    if (tt < 3.25) return 0;
+    return VINE_H * (tt - 3.25) / 0.35;
+  }
+  function updateVine(e, dt, pb) {
+    for (let i = 0; i < e.count; i++) {
+      const h = vineHeight(e, i, W.t), vx = e.x + i * e.gap;
+      if (h > 2 && e.hs[i] <= 2 && Math.abs(vx - P.x) < VW) burst(vx, e.y, 3, 'chip', '#6a4024', 90);
+      e.hs[i] = h;
+      if (h > 10 && !P.dead && P.pw.power <= 0 && overlaps(pb.x, pb.y, pb.w, pb.h, vx - 6, e.y - h, 12, h)) hurt({ x: vx, type: 'vine' });
+    }
+    const end = e.x + (e.count - 1) * e.gap;
+    if (!e.passed && !P.dead && P.x > end + 20 && P.x < end + 150) { e.passed = true; addScore(500, P.x, P.y - P.h - 14, 'Thorns passed!'); }
+  }
+  function spawnBolt() {
+    let tx = P.x + P.vx * 0.6 + rand(-50, 50);
+    tx = clamp(tx, W.camX + 30, W.camX + VW - 30);
+    const gy = surfaceAt(tx);
+    W.ents.push({ type: 'bolt', x: tx, groundY: gy === null ? VH + 40 : gy, state: 'warn', warn: 0.95, strike: 0, hit: false, t: 0 });
+    Sound.play('crackle');
+  }
+  function updateBolt(e, dt, pb) {
+    if (e.state === 'warn') {
+      e.warn -= dt;
+      if (e.warn <= 0) { e.state = 'strike'; e.strike = 0; Sound.play('zap'); W.flash = 0.35; W.shake = Math.max(W.shake, 5); burst(e.x, e.groundY, 12, 'spark', '#dff0ff', 200); }
+      return;
+    }
+    e.strike += dt;
+    if (e.strike < 0.18 && !P.dead && !e.hit && Math.abs(P.x - e.x) < P.w / 2 + 12) {
+      e.hit = true;
+      if (P.pw.power <= 0) hurt(e);
+    }
+    if (e.strike > 0.35) {
+      e.dead = true;
+      if (!e.hit && !P.dead && Math.abs(e.x - P.x) < 110) addScore(500, P.x, P.y - P.h - 14, 'Dodged!');
+    }
+  }
+  function updateSolids(dt) {
+    for (const s of W.solids) {
+      if (s.kind !== 'cloud' || s.style === 'bank' || s.style === 'static') continue;
+      if (s.squash > 0) s.squash = Math.max(0, s.squash - dt * 4);
+      if (s.style === 'drift') {
+        const k = Math.sin(W.t * Math.PI * 2 / s.period);
+        const nx = s.bx + s.ax * k, ny = s.by + s.ay * k;
+        s.dx = nx - s.x; s.dy = ny - s.y; s.x = nx; s.y = ny;
+      } else if (s.style === 'fade') {
+        if (s.off) {
+          s.respawnT -= dt;
+          if (s.respawnT <= 0 && !(P && overlaps(P.x - P.w / 2, P.y - P.h, P.w, P.h, s.x, s.y, s.w, s.h))) { s.off = false; s.alpha = 1; s.standT = 0; }
+        } else {
+          if (s.standT === 0 && P.onGround && P.groundS === s) s.standT = 0.0001;   // stepped on: starts fading
+          if (s.standT > 0) {
+            s.standT += dt;
+            if (s.standT > 0.5) s.alpha -= dt * 2.4;
+            if (s.alpha <= 0) { s.alpha = 0; s.off = true; s.respawnT = 2.5; Sound.play('poof'); }
+          }
+        }
+      }
+    }
+  }
+  function updateWind(dt) {
+    const wd = W.wind;
+    const inZone = W.def.wind.some(([a, b]) => P.x > a && P.x < b);
+    if (!inZone) { wd.phase = 'calm'; wd.t = Math.min(wd.t, 1.5); return; }
+    wd.t -= dt;
+    if (wd.t <= 0) {
+      if (wd.phase === 'calm') { wd.phase = 'warn'; wd.t = 1.0; }
+      else if (wd.phase === 'warn') { wd.phase = 'gust'; wd.t = 2.4; Sound.play('wind'); }
+      else { wd.phase = 'calm'; wd.t = 3.0; }
+    }
+    const rate = wd.phase === 'gust' ? 40 : wd.phase === 'warn' ? 8 : 0;
+    if (rate && Math.random() < rate * dt && W.streaks.length < 60) W.streaks.push({ x: VW + rand(0, 60), y: rand(30, VH - 40), len: rand(30, 90), v: rand(500, 800), a: wd.phase === 'gust' ? 0.7 : 0.35 });
+  }
+
   // ---------- world update ----------
   function updateWorld(dt) {
     W.t += dt;
@@ -502,7 +631,14 @@
       W.time -= dt;
       if (W.time <= 0) { W.time = 0; timeUp(); return; }
     }
+    updateSolids(dt);
+    updateWind(dt);
+    for (const st of W.streaks) st.x -= st.v * dt;
+    W.streaks = W.streaks.filter(st => st.x + st.len > -20);
+    if (W.flash > 0) W.flash = Math.max(0, W.flash - dt * 2);
     updatePlayer(dt);
+    // lightning zones
+    if (W.def.lightning.some(([a, b]) => P.x > a && P.x < b) && !P.dead) { W.boltT -= dt; if (W.boltT <= 0) { spawnBolt(); W.boltT = rand(1.6, 2.8); } }
     // bird triggers
     for (const b of W.birdTriggers) if (!b.done && P.x >= b.x) { b.done = true; spawnBird(b.seed); }
     // rock zones
@@ -653,7 +789,7 @@
         if (act && act.startsWith('level_')) {
           const i = +act.slice(6);
           const L = window.LEVELS[i];
-          if (L.comingSoon || i + 1 > save.unlocked) { Sound.play('deny'); }
+          if (L.comingSoon) { Sound.play('deny'); }
           else { Sound.play('click'); G.score = 0; G.levelStartScore = 0; startLevel(i, true); }
         }
         if (act === 'back') { Sound.play('click'); setState('select'); }
@@ -692,8 +828,16 @@
         break;
       case 'complete':
         if (W) { W.t += dt; }
-        if (act === 'next') { const n = G.levelIdx + 1; G.levelStartScore = G.score; startLevel(n, true); G.score = G.levelStartScore; }
-        if (act === 'replay') { Sound.play('click'); G.score = 0; G.levelStartScore = 0; startLevel(G.levelIdx, true); }
+        if (act === 'next') { Sound.play('click'); const n = G.levelIdx + 1; G.levelStartScore = G.score; startLevel(n, true); }
+        if (act === 'finish') { Sound.play('complete'); save.beaten = true; persist(); setState('victory'); Sound.playMusic('title'); }
+        if (act === 'replay') { Sound.play('click'); G.score = G.levelStartScore; startLevel(G.levelIdx, true); }
+        if (act === 'menu') { Sound.play('click'); setState('title'); }
+        break;
+      case 'victory':
+        if (Math.random() < 0.4) victoryConfetti();
+        for (const c of G.confetti) { c.vy += 200 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.rot += c.vr * dt; }
+        G.confetti = G.confetti.filter(c => c.y < VH + 20);
+        if (act === 'again') { Sound.play('click'); setState('levels'); }
         if (act === 'menu') { Sound.play('click'); setState('title'); }
         break;
       case 'gameover':
@@ -703,7 +847,7 @@
     }
     Input.clearTaps();
   }
-  function isControlTap(tp) { return Input.buttons.some(b => (tp.x - b.x) ** 2 + (tp.y - b.y) ** 2 < (b.r * 1.3) ** 2); }
+  function isControlTap(tp) { return Input.zoneAt(tp.x, tp.y) !== null; }
   function stepWorld(dt) {
     // sub-step for stable collisions
     const n = dt > 1 / 70 ? 2 : 1;
@@ -719,6 +863,7 @@
       case 'title': renderTitle(); break;
       case 'select': renderSelect(); break;
       case 'levels': renderLevels(); break;
+      case 'victory': renderVictory(); break;
       default: renderWorld(); renderHUD(); renderOverlay(); break;
     }
     prevBtns = uiBtns;
@@ -749,7 +894,7 @@
     const t = G.t;
     menuBackground(t * 60);
     D.logo(ctx, VW / 2, 92, Math.min(1.5, VW / 520), t);
-    D.text(ctx, 'A Grassy Hills Adventure', VW / 2, 146, 15, '#fff', { sw: 4 });
+    D.text(ctx, 'A Veggie Adventure', VW / 2, 146, 15, '#fff', { sw: 4 });
     // three heroes running in place
     CHAR_ORDER.forEach((k, i) => {
       const x = VW / 2 - 90 + i * 90;
@@ -809,7 +954,7 @@
     const x0 = VW / 2 - (cw * 3 + gap * 2) / 2;
     window.LEVELS.forEach((L, i) => {
       const x = x0 + i * (cw + gap), y = 60;
-      const locked = L.comingSoon || i + 1 > save.unlocked;
+      const locked = !!L.comingSoon;
       const th = window.THEMES[L.theme];
       ctx.fillStyle = 'rgba(20,30,60,.35)'; D.rr(ctx, x, y + 5, cw, ch, 18); ctx.fill();
       const g = ctx.createLinearGradient(0, y, 0, y + ch); g.addColorStop(0, th.card[0]); g.addColorStop(1, th.card[1]);
@@ -830,12 +975,35 @@
       } else {
         const best = save.best[L.id];
         D.text(ctx, best ? 'BEST ' + best : 'NEW!', x + cw / 2, y + 146, 13, '#fff', { sw: 4 });
-        button('level_' + i, x + 18, y + 162, cw - 36, 36, 'PLAY', { primary: i === 0, size: 16 });
+        button('level_' + i, x + 18, y + 162, cw - 36, 36, 'PLAY', { primary: i === 0, size: 16, col: [['#ffde3a', '#ff9a1f'], ['#c8a8ff', '#7a4ae0'], ['#ff9ab8', '#e0306e']][i % 3] });
       }
       uiBtns.push({ id: 'level_' + i, x, y, w: cw, h: ch, disabled: locked });
     });
     button('back', 14 + SAFE_L, VH - 50, 90, 38, '◀ BACK', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
     iconButton('mute', VW - 30 - SAFE_R, 28, 17, muteIcon);
+  }
+
+  G.confetti = [];
+  function victoryConfetti() {
+    if (G.confetti.length > 150) return;
+    G.confetti.push({ x: rand(0, VW), y: -10, vx: rand(-40, 40), vy: rand(20, 80), rot: rand(0, 6), vr: rand(-8, 8), col: ['#ff5fa0', '#ffe14a', '#8af05a', '#5ec8ff', '#b65cff'][Math.floor(rand(0, 5))] });
+  }
+  function renderVictory() {
+    const t = G.t;
+    menuBackground(t * 40);
+    ctx.fillStyle = 'rgba(255,240,160,.18)'; ctx.fillRect(0, 0, VW, VH);
+    for (const c of G.confetti) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot); ctx.fillStyle = c.col; ctx.fillRect(-3, -1.5, 6, 3); ctx.restore(); }
+    D.text(ctx, 'YOU WIN!', VW / 2, 52, 44, '#ffde3a', { sw: 9 });
+    D.text(ctx, 'All three levels complete!', VW / 2, 92, 16, '#fff', { sw: 4 });
+    D.text(ctx, 'FINAL SCORE  ' + G.score, VW / 2, 124, 22, '#8af05a', { sw: 5 });
+    D.text(ctx, G.score >= save.high ? '★ NEW HIGH SCORE ★' : 'HIGH SCORE ' + save.high, VW / 2, 150, 13, '#fff', { sw: 3 });
+    CHAR_ORDER.forEach((k, i) => {
+      const x = VW / 2 - 110 + i * 110, hop = Math.abs(Math.sin(t * 6 + i * 1.3)) * 30;
+      heroPose(k, x, 300 - hop, t + i, { scale: 1.7, ground: hop < 2, air: hop > 2, face: i === 2 ? -1 : 1 });
+    });
+    D.tree(ctx, VW - 70 - SAFE_R, 300, 1, t, true);
+    button('again', VW / 2 - 170, VH - 46, 160, 38, 'PLAY AGAIN', { primary: true, size: 15 });
+    button('menu', VW / 2 + 10, VH - 46, 160, 38, 'MENU', { col: ['#ff9ab8', '#e0306e'], size: 15 });
   }
 
   function renderWorld() {
@@ -848,7 +1016,8 @@
     // solids
     for (const s of W.solids) {
       if (s.x > R || s.x + s.w < L) continue;
-      if (s.kind === 'ground') drawGround(s); else drawBlock(s);
+      if (s.kind === 'cloud') { if (!s.off) D.cloudPlatform(ctx, s.x, s.y, s.w, s.h, s.style, s.alpha * (s.style === 'fade' && s.standT > 0 ? (0.6 + 0.4 * Math.abs(Math.sin(t * 25))) : 1), t, s.squash); }
+      else if (s.kind === 'ground') drawGround(s); else drawBlock(s);
     }
     for (const d of W.decor) if (d.x > L && d.x < R) W.theme.decor(ctx, d, t);
     // end-of-level tree & sign
@@ -876,6 +1045,20 @@
         case 'snake': D.snake(ctx, e.x, e.y, { t: e.t, headY: e.headY, open: e.open, dir: -1 }); break;
         case 'bird': D.bird(ctx, e.x, e.y, { dir: -1, t: e.t, seed: e.seed }); break;
         case 'orb': D.powerOrb(ctx, e.x, e.y, e.kind, e.t); break;
+        case 'flytrap': D.flytrap(ctx, e.x, e.y, e.open, W.t, e.warn); break;
+        case 'vine': for (let i = 0; i < e.count; i++) D.vine(ctx, e.x + i * e.gap, e.y, e.hs[i], W.t, i); break;
+        case 'bolt':
+          if (e.state === 'warn') {
+            const k = 1 - e.warn / 0.95;
+            ctx.fillStyle = 'rgba(255,255,160,' + (0.08 + 0.18 * k * (0.5 + 0.5 * Math.sin(W.t * 30))) + ')';
+            ctx.fillRect(e.x - 14, 60, 28, e.groundY - 60);
+            ctx.fillStyle = 'rgba(255,240,120,' + (0.3 + 0.4 * k) + ')'; D.ell(ctx, e.x, e.groundY - 1, 10 + 10 * k, 4); ctx.fill();
+            D.stormCloud(ctx, e.x, 46, W.t, Math.sin(W.t * 30) > 0.3);
+          } else {
+            D.stormCloud(ctx, e.x, 46, W.t, true);
+            D.bolt(ctx, e.x, 60, e.groundY, W.t, Math.max(0, 1 - e.strike / 0.35));
+          }
+          break;
       }
     }
     drawPlayer();
@@ -901,6 +1084,12 @@
     }
     ctx.globalAlpha = 1;
     ctx.restore();
+    // wind streaks (screen space)
+    for (const st of W.streaks) {
+      ctx.strokeStyle = 'rgba(255,255,255,' + st.a + ')'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(st.x, st.y); ctx.quadraticCurveTo(st.x + st.len / 2, st.y - 4, st.x + st.len, st.y); ctx.stroke();
+    }
+    if (W.flash > 0) { ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.7, W.flash * 2) + ')'; ctx.fillRect(0, 0, VW, VH); }
     // falling-rock warnings at the top of the screen
     for (const e of W.ents) if (e.type === 'rock' && e.state === 'warn') {
       const sx = e.x - W.camX, blink = Math.sin(G.t * 30) > 0;
@@ -911,18 +1100,19 @@
     }
   }
 
-  let dirtPattern = null;
+  const dirtPatterns = {};
   function getDirtPattern() {
-    if (dirtPattern) return dirtPattern;
+    const base = (W && W.theme.dirtBase) || '#a06c3a';
+    if (dirtPatterns[base]) return dirtPatterns[base];
     const c = document.createElement('canvas'); c.width = 64; c.height = 64;
     const x = c.getContext('2d');
-    x.fillStyle = '#a06c3a'; x.fillRect(0, 0, 64, 64);
+    x.fillStyle = base; x.fillRect(0, 0, 64, 64);
     for (let i = 0; i < 22; i++) {
       x.fillStyle = i % 3 ? 'rgba(90,50,20,.35)' : 'rgba(255,220,170,.18)';
       x.beginPath(); x.ellipse(window.hash01(i) * 64, window.hash01(i + 40) * 64, 2 + window.hash01(i + 80) * 3, 1.5 + window.hash01(i + 90) * 2, 0, 0, 6.29); x.fill();
     }
-    dirtPattern = ctx.createPattern(c, 'repeat');
-    return dirtPattern;
+    dirtPatterns[base] = ctx.createPattern(c, 'repeat');
+    return dirtPatterns[base];
   }
   function drawGround(s) {
     const bottom = VH + 20;
@@ -935,10 +1125,11 @@
     ctx.fillStyle = 'rgba(60,30,10,.35)';
     ctx.fillRect(s.x, s.y + 8, 4, bottom - s.y); ctx.fillRect(s.x + s.w - 4, s.y + 8, 4, bottom - s.y);
     // grass
+    const gc = W.theme.grass || ['#8af06a', '#3fae3a'];
     const g = ctx.createLinearGradient(0, s.y - 2, 0, s.y + 14);
-    g.addColorStop(0, '#8af06a'); g.addColorStop(1, '#3fae3a');
+    g.addColorStop(0, gc[0]); g.addColorStop(1, gc[1]);
     ctx.fillStyle = g; D.rr(ctx, s.x - 3, s.y - 2, s.w + 6, 15, 6); ctx.fill();
-    ctx.fillStyle = '#3fae3a';
+    ctx.fillStyle = gc[1];
     const x0 = Math.max(s.x + 4, W.camX - 20), x1 = Math.min(s.x + s.w - 4, W.camX + VW + 20);
     for (let x = Math.floor(x0 / 14) * 14 + 7; x < x1; x += 14) { D.circ(ctx, x, s.y + 12, 5.5); ctx.fill(); }
     ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(s.x, s.y, s.w, 2);
@@ -1020,6 +1211,12 @@
       if (P.pw[k] < 2.5 && Math.sin(G.t * 16) > 0) { ctx.fillStyle = 'rgba(255,255,255,.4)'; D.circ(ctx, px, 58, 15); ctx.fill(); }
       px += 44;
     }
+    // wind warning
+    if (W.wind.phase !== 'calm') {
+      const gust = W.wind.phase === 'gust', wx = VW / 2 - 70;
+      ctx.fillStyle = gust ? 'rgba(60,90,160,.6)' : 'rgba(20,30,60,.45)'; D.rr(ctx, wx - 40, 46, 80, 24, 12); ctx.fill();
+      D.text(ctx, gust ? '◀◀ WIND' : 'WIND!', wx, 58, 12, gust ? '#cfe6ff' : (Math.sin(G.t * 14) > 0 ? '#ffde3a' : '#fff'), { sw: 3 });
+    }
     // touch controls
     if (Input.touchUsed && (G.state === 'play' || G.state === 'intro')) {
       for (const b of Input.buttons) {
@@ -1100,8 +1297,9 @@
       D.text(ctx, r.newHigh ? '★ NEW HIGH SCORE! ★' : 'HIGH SCORE ' + save.high, VW / 2, p.y + 180, 14, r.newHigh ? '#8af05a' : '#fff', { sw: 4 });
       const next = window.LEVELS[G.levelIdx + 1];
       if (next && !next.comingSoon) button('next', VW / 2 - 150, p.y + 200, 300, 40, 'NEXT LEVEL ▶', { primary: true, size: 17 });
-      else button('none', VW / 2 - 150, p.y + 200, 300, 40, next ? 'LEVEL ' + next.id + ' COMING SOON' : 'YOU BEAT THE GAME!', { disabled: true, size: 14 });
-      button('replay', VW / 2 - 150, p.y + 250, 144, 36, 'REPLAY', { col: ['#9fd2ff', '#4a9bf0'], size: 14, primary: !(next && !next.comingSoon) });
+      else if (!next) button('finish', VW / 2 - 150, p.y + 200, 300, 40, 'FINISH ★', { primary: true, size: 17, col: ['#8af05a', '#2f9e3a'] });
+      else button('none', VW / 2 - 150, p.y + 200, 300, 40, 'LEVEL ' + next.id + ' COMING SOON', { disabled: true, size: 14 });
+      button('replay', VW / 2 - 150, p.y + 250, 144, 36, 'REPLAY', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
       button('menu', VW / 2 + 6, p.y + 250, 144, 36, 'MENU', { col: ['#ff9ab8', '#e0306e'], size: 14 });
     }
   }
@@ -1123,10 +1321,14 @@
   window.RNR = {
     G, CHARACTERS,
     get W() { return W; }, get P() { return P; }, get state() { return G.state; }, get save() { return save; },
-    start(charKey, levelIdx) { G.god = false; G.charKey = charKey || G.charKey; G.score = 0; G.levelStartScore = 0; startLevel(levelIdx || 0, true); setState('play'); },
+    start(charKey, levelIdx) { G.god = false; G.rescue = false; G.rescues = 0; G.rescueAt = []; G.charKey = charKey || G.charKey; G.score = 0; G.levelStartScore = 0; startLevel(levelIdx || 0, true); setState('play'); },
     teleport(x) { P.x = x; P.y = (surfaceAt(x) || 300) - 1; P.vy = 0; W.camX = clamp(x - VW * 0.38, 0, W.def.length - VW); },
     giveSeeds(n) { W.seeds += n; },
     god(on) { G.god = on !== false; },
+    rescue(on) { G.rescue = on !== false; },
+    surfaceAt(x, g) { return surfaceAt(x, g); },
+    vineHeight(e, i, time) { return vineHeight(e, i, time); },
+    win() { win(); },
     power(kind) { P.pw[kind] = POWER_TIME; },
     spawn(type) { if (type === 'rock') spawnRock(); if (type === 'bird') spawnBird(true); if (type === 'orb') spawnPower(); },
     hurt() { hurt(null); }

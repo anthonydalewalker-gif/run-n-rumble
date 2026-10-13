@@ -4,7 +4,7 @@
   'use strict';
   let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null;
   let muted = false;
-  try { muted = localStorage.getItem('rnr_muted') === '1'; } catch (e) {}
+  try { muted = localStorage.getItem('rnr_muted_v2') === '1'; } catch (e) {}
 
   // ---------- custom MP3 detection ----------
   const fileTracks = {};      // name -> HTMLAudioElement when it loaded OK
@@ -12,23 +12,32 @@
   function probe(name) {
     if (probing[name]) return;
     probing[name] = true;
-    const a = new Audio();
-    a.preload = 'auto';
-    a.loop = true;
-    a.addEventListener('canplay', () => {
-      if (fileTracks[name]) return;
+    if (location.protocol === 'file:') return;          // can't check files offline from disk
+    fetch('audio/' + name + '.mp3', { method: 'HEAD', cache: 'no-cache' }).then(r => {
+      if (!r.ok) return;                                 // no custom track: built-in music keeps playing
+      const a = new Audio('audio/' + name + '.mp3');
+      a.preload = 'auto'; a.loop = true; a.muted = muted;
+      a.setAttribute('playsinline', '');
       fileTracks[name] = a;
-      a.muted = muted;
-      // If this track is currently playing as synth, switch over to the file.
-      if (currentTrack === name) { stopSynth(); playFile(name); }
-    }, { once: true });
-    a.addEventListener('error', () => {}, { once: true });
-    a.src = 'audio/' + name + '.mp3';
+      if (currentTrack === name && ctx) { stopSynth(); playFile(name); }
+    }).catch(() => {});
   }
 
   // ---------- core ----------
-  function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  // A tiny silent WAV played through an <audio> element. On iPhone this moves the page onto the
+  // "media" audio channel so Web Audio is heard even when the ring/silent switch is on silent.
+  let silentEl = null;
+  function silentWavUrl() {
+    const n = 4410, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 44100, true); v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
+  function create() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ctx = new AC();
@@ -38,8 +47,34 @@
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    if (pendingTrack) { const t = pendingTrack; pendingTrack = null; playMusic(t); }
+    ctx.onstatechange = () => { if (ctx.state === 'running' && pendingTrack) { const t = pendingTrack; pendingTrack = null; currentTrack = null; playMusic(t); } };
   }
+
+  // Must be called synchronously from inside a user gesture (touchstart/touchend/click/keydown).
+  function unlock() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+    if (!ctx) create();
+    if (!ctx) return;
+    if (ctx.state !== 'running') {
+      const p = ctx.resume(); if (p && p.catch) p.catch(() => {});
+      // Play a 1-sample silent buffer: the classic iOS Web Audio unlock.
+      try { const b = ctx.createBuffer(1, 1, 22050), s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0); } catch (e) {}
+    }
+    if (!silentEl) {
+      silentEl = new Audio(silentWavUrl());
+      silentEl.loop = true; silentEl.setAttribute('playsinline', ''); silentEl.volume = 0.01;
+    }
+    if (silentEl.paused && !document.hidden) { const p = silentEl.play(); if (p && p.catch) p.catch(() => {}); }
+    // Let custom MP3 tracks play later without another gesture.
+    Object.keys(fileTracks).forEach(k => {
+      const a = fileTracks[k]; if (a._primed) return; a._primed = true;
+      if (playingFile === a) return;
+      const p = a.play(); if (p && p.then) p.then(() => { if (playingFile !== a) a.pause(); }).catch(() => { a._primed = false; });
+    });
+    if (pendingTrack) { const t = pendingTrack; pendingTrack = null; playMusic(t); }
+    else if (playingFile && playingFile.paused && !document.hidden) { const p = playingFile.play(); if (p && p.catch) p.catch(() => {}); }
+  }
+  const init = unlock;
 
   function tone(f0, f1, dur, type, vol, delay, bus) {
     if (!ctx) return;
@@ -86,6 +121,11 @@
     gameover() { [523, 466, 392, 330, 262].forEach((f, i) => tone(f, f, 0.3, 'triangle', 0.3, i * 0.22)); },
     complete() { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, f, i === 6 ? 0.6 : 0.16, 'triangle', 0.3, i * 0.11)); },
     grow()     { for (let i = 0; i < 8; i++) tone(400 + i * 90, 500 + i * 90, 0.1, 'sine', 0.15, i * 0.07); },
+    boing()    { tone(180, 720, 0.25, 'sine', 0.4); tone(360, 1100, 0.2, 'triangle', 0.12, 0.03); },
+    zap()      { noise(0.45, 'highpass', 6000, 800, 0.6); tone(90, 40, 0.5, 'sawtooth', 0.25); noise(0.6, 'lowpass', 400, 60, 0.5, 0.05); },
+    crackle()  { for (let i = 0; i < 5; i++) noise(0.04, 'bandpass', 3000 + i * 400, 2000, 0.12, i * 0.12, 4); },
+    wind()     { noise(1.8, 'bandpass', 300, 1400, 0.35, 0, 2.5); noise(1.6, 'bandpass', 700, 2600, 0.15, 0.3, 3); },
+    chomp()    { tone(260, 120, 0.08, 'square', 0.12); noise(0.08, 'lowpass', 1500, 300, 0.25); },
     click()    { tone(700, 900, 0.05, 'triangle', 0.2); },
     deny()     { tone(200, 160, 0.15, 'square', 0.12); }
   };
@@ -108,7 +148,21 @@
              48,0,55,0, 53,0,60,0, 48,0,55,0, 43,0,50,0, 48,0,55,0, 45,0,52,0, 41,0,48,0, 43,0,47,0]
     }
   };
-  SONGS.level2 = SONGS.level1; SONGS.level3 = SONGS.level1; // placeholders until those levels exist
+  // Level 2: floaty, dreamy arpeggios. Level 3: bouncy and a bit more intense.
+  SONGS.level2 = {
+    bpm: 124,
+    lead: [79,0,83,86, 0,83,79,0, 81,0,84,88, 0,84,81,0, 76,0,79,83, 0,79,76,0, 74,76,78,79, 81,0,0,0,
+           79,0,83,86, 0,88,86,0, 84,0,81,84, 0,79,76,0, 77,0,81,84, 83,0,79,0, 81,79,78,76, 79,0,0,0],
+    bass: [43,0,50,0, 55,0,50,0, 45,0,52,0, 57,0,52,0, 40,0,47,0, 52,0,47,0, 38,0,45,0, 50,0,45,0,
+           43,0,50,0, 55,0,50,0, 45,0,52,0, 57,0,52,0, 41,0,48,0, 40,0,47,0, 38,0,45,0, 43,0,0,0]
+  };
+  SONGS.level3 = {
+    bpm: 150,
+    lead: [69,0,72,76, 0,74,72,0, 71,0,74,77, 0,76,74,0, 72,0,76,79, 81,0,79,76, 74,0,71,0, 72,74,76,0,
+           69,0,72,76, 0,74,72,0, 71,0,74,77, 79,0,77,74, 76,0,72,69, 71,72,74,71, 69,0,0,0, 64,0,0,0],
+    bass: [45,0,45,57, 45,0,45,57, 43,0,43,55, 43,0,43,55, 41,0,41,53, 41,0,41,53, 40,0,40,52, 40,0,44,0,
+           45,0,45,57, 45,0,45,57, 43,0,43,55, 43,0,43,55, 41,0,41,53, 40,0,40,52, 45,0,40,0, 45,0,0,0]
+  };
 
   let currentTrack = null, pendingTrack = null, synthTimer = null, step = 0, nextTime = 0, playingFile = null;
   const midi = n => 440 * Math.pow(2, (n - 69) / 12);
@@ -150,7 +204,6 @@
     return true;
   }
   function playMusic(name) {
-    probe(name);
     if (!ctx) { pendingTrack = name; return; }
     if (currentTrack === name) return;
     stopMusic();
@@ -167,21 +220,34 @@
   }
   function setMuted(m) {
     muted = m;
-    try { localStorage.setItem('rnr_muted', m ? '1' : '0'); } catch (e) {}
+    try { localStorage.setItem('rnr_muted_v2', m ? '1' : '0'); } catch (e) {}
     if (master) master.gain.setTargetAtTime(m ? 0 : 1, ctx.currentTime, 0.02);
     Object.values(fileTracks).forEach(a => { a.muted = m; });
+    if (!m) unlock();
   }
-  // Pause music when the app is hidden (phone locked / switched apps).
+  // Pause when the app is hidden (phone locked / switched apps); resume when it comes back.
   document.addEventListener('visibilitychange', () => {
     if (!ctx) return;
-    if (document.hidden) { ctx.suspend(); if (playingFile) playingFile.pause(); }
-    else { ctx.resume(); if (playingFile) { const p = playingFile.play(); if (p && p.catch) p.catch(() => {}); } }
+    if (document.hidden) { ctx.suspend(); if (playingFile) playingFile.pause(); if (silentEl) silentEl.pause(); }
+    else {
+      const p = ctx.resume(); if (p && p.catch) p.catch(() => {});
+      if (playingFile) { const q = playingFile.play(); if (q && q.catch) q.catch(() => {}); }
+      if (silentEl) { const q = silentEl.play(); if (q && q.catch) q.catch(() => {}); }
+    }
   });
+  window.addEventListener('pageshow', () => { if (ctx && ctx.state !== 'running') { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } });
 
-  ['title', 'level1'].forEach(probe);
+  // audio/music.json lists which custom MP3s exist, e.g. {"tracks": ["title", "level1"]}.
+  // (Checking a list avoids 404 errors for tracks that haven't been added.)
+  if (location.protocol !== 'file:') {
+    fetch('audio/music.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : { tracks: [] })
+      .then(j => (j.tracks || []).forEach(probe)).catch(() => {});
+  }
 
   window.Sound = {
-    init, sfx, playMusic, stopMusic,
+    init, unlock, sfx, playMusic, stopMusic,
+    get state() { return ctx ? ctx.state : 'none'; },
+    get musicMode() { return playingFile ? 'file' : (synthTimer ? 'synth' : 'none'); },
     play(name) { if (sfx[name] && ctx && !muted) sfx[name](); },
     get muted() { return muted; }, setMuted, toggleMute() { setMuted(!muted); },
     get ready() { return !!ctx; }
