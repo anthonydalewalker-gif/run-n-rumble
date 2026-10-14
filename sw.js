@@ -1,8 +1,8 @@
 // Offline cache for Run N Rumble. Bump VERSION when files change.
-const VERSION = 'rnr-v3';
+const VERSION = 'rnr-v4';
 const CORE = [
   './', './index.html', './manifest.webmanifest',
-  './js/audio.js', './js/input.js', './js/draw.js', './js/levels.js', './js/game.js',
+  './js/audio.js', './js/input.js', './js/draw.js', './js/art.js', './js/levels.js', './js/game.js',
   './audio/music.json', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
 self.addEventListener('install', e => {
