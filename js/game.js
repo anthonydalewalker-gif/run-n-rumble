@@ -68,20 +68,20 @@
     const w = {
       def, theme, solids: [], gaps: [], ents: [], parts: [], pops: [], decor: [], streaks: [],
       wind: { phase: 'calm', t: 2.5 }, boltT: 2, flash: 0,
-      time: def.time, camX: 0, shake: 0, t: 0,
+      time: def.time, camX: 0, camY: 0, shake: 0, t: 0,
       g: GRAV * (def.gravity || 1), maxFall: MAX_FALL * (def.gravity ? 0.55 : 1), jumpScale: def.jumpScale || 1,
       rockT: 2, powerT: def.power.first, birdTriggers: def.birds.map(b => ({ x: b[0], skin: b[1] || def.birdSkin || 'bird', done: false })),
       banner: null, won: false, bubbleT: 0
     };
-    def.ground.forEach(([x0, x1, top]) => w.solids.push({ x: x0, y: top, w: x1 - x0, h: 600, kind: groundKind, style: 'bank', main: true, bump: 0, alpha: 1 }));
+    def.ground.forEach(([x0, x1, top]) => w.solids.push({ x: x0, y: top, w: x1 - x0, h: def.seabed ? seabedAt(x0 + 1, def) - top : 600, kind: groundKind, style: 'bank', main: true, bump: 0, alpha: 1 }));
     def.blocks.forEach(([x, top, bw]) => w.solids.push({ x, y: top, w: bw, h: blockKind === 'ac' ? 30 : 22, kind: blockKind, style: 'static', bump: 0, alpha: 1 }));
     def.clouds.forEach(([x, top, cw, style, o]) => {
       o = o || {};
       w.solids.push({ x, y: top, w: cw, h: 20, kind: 'cloud', style, bx: x, by: top, ax: o.ax || 0, ay: o.ay || 0, period: o.period || 4, bump: 0, alpha: 1, standT: 0, off: false, respawnT: 0, squash: 0, dx: 0, dy: 0 });
     });
     def.logs.forEach(([x, top, lw, o]) => { o = o || {}; w.solids.push({ x, y: top, w: lw, h: 16, kind: 'log', style: 'drift', bx: x, by: top, ax: o.ax || 0, ay: 3, period: o.ax ? 5 : 2.6, bump: 0, alpha: 1, dx: 0, dy: 0, squash: 0 }); });
-    if (def.seabed) w.solids.push({ x: -50, y: def.seabed, w: def.length + 100, h: 400, kind: 'sand', style: 'bank', main: true, seabed: true, bump: 0, alpha: 1 });
-    def.coral.forEach(([x, top, cw]) => w.solids.push({ x, y: top, w: cw, h: (def.seabed || VH) - top, kind: 'coral', style: 'static', bump: 0, alpha: 1 }));
+    if (def.seabed) def.seabed.forEach(([x0, x1, y]) => w.solids.push({ x: x0, y, w: x1 - x0, h: 400, kind: 'sand', style: 'bank', main: true, seabed: true, bump: 0, alpha: 1 }));
+    def.coral.forEach(([x, top, cw]) => w.solids.push({ x, y: top, w: cw, h: seabedAt(x, def) - top, kind: 'coral', style: 'static', bump: 0, alpha: 1 }));
     if (!def.water.length) {
       const gs = def.ground.slice().sort((a, b) => a[0] - b[0]);
       for (let i = 0; i < gs.length - 1; i++) if (gs[i + 1][0] > gs[i][1]) w.gaps.push({ x0: gs[i][1], x1: gs[i + 1][0], passed: false });
@@ -125,6 +125,13 @@
     }
     return null;
   }
+  function seabedAt(x, def) {
+    def = def || W.def;
+    if (!def.seabed) return VH;
+    for (const [a, b, y] of def.seabed) if (x >= a && x < b) return y;
+    return VH;
+  }
+  const isDeep = x => seabedAt(x) > 400;
   function inWater(b) { const wy = waterY(b.x); return wy !== null && b.y - b.h * 0.45 > wy; }
 
   function makePlayer() {
@@ -148,7 +155,7 @@
     if (fresh) { G.lives = START_LIVES; G.levelStartScore = G.score; }
     G.score = G.levelStartScore;
     buildLevel(idx);
-    W.ents.forEach(e => { if (e.y === null) e.y = e.type === 'fish' ? 250 : (surfaceAt(e.x) || W.def.seabed || 300); });
+    W.ents.forEach(e => { if (e.y === null) e.y = e.type === 'fish' ? 250 : (surfaceAt(e.x) || seabedAt(e.x)); });
     P = makePlayer();
     W.camX = 0;
     setState('intro');
@@ -304,7 +311,7 @@
         P.onGround = false;
       }
       if (Input.jump && P.vy > -120) P.vy -= 260 * dt;     // hold to drift upward
-      const wy2 = waterY(P.x), open = wy2 > 200;   // open water between docks: buoyancy bobs you back out
+      const wy2 = waterY(P.x), open = !isDeep(P.x);   // open water between docks: buoyancy bobs you back out
       if (open) {
         const depth = P.y - P.h * 0.5 - wy2;
         P.vy -= (depth > 0 ? 900 + depth * 8 : 0) * dt;
@@ -357,7 +364,7 @@
     if (fast) { P.trailT -= dt; if (P.trailT < 0) { P.trailT = 0.045; P.trail.push({ x: P.x, y: P.y, face: P.face, a: 0.5 }); } }
     P.trail.forEach(tr => tr.a -= dt * 2); P.trail = P.trail.filter(tr => tr.a > 0);
     // fell into a gap
-    if (P.y > VH + 60) {
+    if (P.y > (W.def.seabed ? 2000 : VH + 60)) {
       if (G.rescue) { G.rescues++; (G.rescueAt = G.rescueAt || []).push(Math.round(P.x)); let x = P.x; while (surfaceAt(x, true) === null && x < W.def.length) x += 20; P.x = x + 20; P.y = surfaceAt(P.x, true) - 1; P.vy = 0; return; }
       P.stars = 0; die('Fell in a gap!');
     }
@@ -447,7 +454,7 @@
       e.vy = Math.min(e.vy + W.g * dt, W.maxFall);
       moveBody(e, dt);
       if (e.hitWall) e.dir *= -1;
-      if (e.y > VH + 80) { e.dead = true; return; }
+      if (e.y > (W.def.seabed ? 2000 : VH + 80)) { e.dead = true; return; }
       if (e.x < W.camX - 200) { e.dead = true; return; }
       contact(e, stompCheck(e, pb, e.y - e.h));
     } else if (e.state === 'flat') {
@@ -548,11 +555,11 @@
   }
 
   function updateFish(e, dt, pb) {
-    if (!e.active) { if (e.x < W.camX + VW + 40) { e.active = true; e.y = clamp(P.y - 20, (waterY(e.x) || 0) + 24, (W.def.seabed || VH) - 20); } else return; }
+    if (!e.active) { if (e.x < W.camX + VW + 40) { e.active = true; e.y = clamp(P.y - 20, (waterY(e.x) || 0) + 24, seabedAt(e.x) - 20); } else return; }
     const wy = waterY(e.x);
     e.x -= e.speed * dt;
     // drift toward the player's depth, gently
-    const ty = clamp(P.y - P.h / 2, (wy === null ? 0 : wy) + 18, (W.def.seabed || VH) - 16);
+    const ty = clamp(P.y - P.h / 2, (wy === null ? 0 : wy) + 18, seabedAt(e.x) - 16);
     e.y += clamp(ty - e.y, -40 * dt, 40 * dt) + Math.sin(e.t * 3) * 0.4;
     if (e.x < W.camX - 80) { e.dead = true; return; }
     const res = stompCheck(e, pb, e.y - e.h / 2);
@@ -696,6 +703,10 @@
     // camera
     const target = clamp(P.x - VW * 0.38, 0, Math.max(0, W.def.length - VW));
     W.camX += (target - W.camX) * Math.min(1, dt * 7);
+    // deep water: camera follows Tubby down (never above the normal view)
+    const maxY = W.def.seabed ? Math.max(...W.def.seabed.map(b => b[2])) + 20 - VH : 0;
+    const ty = clamp(P.y - 230, 0, maxY);
+    W.camY += (ty - W.camY) * Math.min(1, dt * 5);
   }
 
   function win() {
@@ -992,10 +1003,13 @@
 
   function renderWorld() {
     const t = W.t;
-    W.theme.background(ctx, W.camX, VW, VH, t);
+    if (W.camY > 0.5) {   // deep water: scroll the backdrop up with the camera and fill below with deep sea
+      ctx.save(); ctx.translate(0, -W.camY); W.theme.background(ctx, W.camX, VW, VH, t); ctx.restore();
+      ctx.fillStyle = '#1a5fb0'; ctx.fillRect(0, VH - W.camY - 1, VW, W.camY + 2);
+    } else W.theme.background(ctx, W.camX, VW, VH, t);
     ctx.save();
     const sh = W.shake;
-    ctx.translate(-Math.round(W.camX * 10) / 10 + (sh ? rand(-sh, sh) : 0), sh ? rand(-sh, sh) * 0.6 : 0);
+    ctx.translate(-Math.round(W.camX * 10) / 10 + (sh ? rand(-sh, sh) : 0), -Math.round(W.camY * 10) / 10 + (sh ? rand(-sh, sh) * 0.6 : 0));
     const L = W.camX - 60, R = W.camX + VW + 60;
     // solids
     for (const s of W.solids) {
@@ -1006,9 +1020,9 @@
         case 'block': drawBlock(s); break;
         case 'roof': D.building(ctx, s, L, R, VH, t); break;
         case 'ac': D.acUnit(ctx, s, s.y - Math.sin(s.bump * Math.PI) * 6); break;
-        case 'dock': D.dock(ctx, s, VH); break;
+        case 'dock': D.dock(ctx, s, VH + W.camY); break;
         case 'log': D.log(ctx, s); break;
-        case 'sand': D.sand(ctx, s, L, R, VH); break;
+        case 'sand': D.sand(ctx, s, L, R, VH + W.camY); break;
         case 'coral': D.coral(ctx, s, t); break;
         case 'moon': D.moonRock(ctx, s, L, R, VH, false); break;
         case 'asteroid': { const by = s.y - Math.sin(s.bump * Math.PI) * 6; D.moonRock(ctx, Object.assign({}, s, { y: by }), L, R, VH, true); break; }
@@ -1114,13 +1128,13 @@
   }
   function drawWater(L, R, t) {
     if (!W.def.water.length) return;
-    const bottom = VH + 20, step = 8;
+    const bottom = VH + 20 + W.camY, step = 8;
     const x0 = Math.floor(L / step) * step, x1 = R;
     const wave = x => (waterY(x) ?? bottom) + Math.sin(x * 0.04 + t * 2.2) * 2.5;
     ctx.beginPath(); ctx.moveTo(x0, bottom);
     for (let x = x0; x <= x1 + step; x += step) ctx.lineTo(x, wave(x));
     ctx.lineTo(x1 + step, bottom); ctx.closePath();
-    const g = ctx.createLinearGradient(0, 60, 0, VH); g.addColorStop(0, 'rgba(60,170,240,.42)'); g.addColorStop(1, 'rgba(20,70,170,.62)');
+    const g = ctx.createLinearGradient(0, 272, 0, 660); g.addColorStop(0, 'rgba(60,170,240,.42)'); g.addColorStop(1, 'rgba(20,70,170,.62)');
     ctx.fillStyle = g; ctx.fill();
     ctx.strokeStyle = 'rgba(230,250,255,.85)'; ctx.lineWidth = 2.5;
     ctx.beginPath(); let first = true;
@@ -1130,14 +1144,14 @@
     ctx.fillStyle = 'rgba(255,255,255,.06)';
     for (let k = Math.floor(L / 160); k < R / 160 + 1; k++) {
       const x = k * 160 + 40, wy = waterY(x);
-      if (wy === null || wy > 200) continue;
-      ctx.beginPath(); ctx.moveTo(x, wy); ctx.lineTo(x + 30, wy); ctx.lineTo(x + 80, VH); ctx.lineTo(x + 40, VH); ctx.fill();
+      if (wy === null || !isDeep(x)) continue;
+      ctx.beginPath(); ctx.moveTo(x, wy); ctx.lineTo(x + 30, wy); ctx.lineTo(x + 80, seabedAt(x)); ctx.lineTo(x + 40, seabedAt(x)); ctx.fill();
     }
     ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1;
     for (let k = Math.floor(L / 90); k < R / 90 + 1; k++) {
       const x = k * 90 + window.hash01(k) * 60, wy = waterY(x);
-      if (wy === null || wy > 200) continue;
-      const y = VH - ((t * 30 + window.hash01(k + 7) * 300) % (VH - wy));
+      if (wy === null || !isDeep(x)) continue;
+      const sb = seabedAt(x), y = sb - ((t * 30 + window.hash01(k + 7) * 300) % (sb - wy));
       D.circ(ctx, x + Math.sin(t * 2 + k) * 4, y, 2 + window.hash01(k + 3) * 2); ctx.stroke();
     }
   }
