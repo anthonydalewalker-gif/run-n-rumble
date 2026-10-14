@@ -319,13 +319,182 @@
   window.RNRLevel1Song = Level1Song;
   SONGS.level1 = { custom: Level1Song };
 
+
+  // ---------- Level 2-5 variations of the L1 motif + celebration music ----------
+  const Vars = (function () {
+    const { hz, env, osc, marimba, chip, kick, nz } = TitleSong.lib;
+    const N = { B4: 71, C5: 72, D5: 74, E5: 76, F5: 77, G5: 79, A5: 81, B5: 83, C6: 84 };
+    const GRID = ('C5 . E5 G5 C6 . B5 A5 G5 . E5 C5 D5 . . . F5 . A5 C6 B5 . A5 G5 E5 . G5 C6 D5 . B4 C5').split(' ');
+    const MEL = [];
+    GRID.forEach((sym, i) => { if (sym === '.') MEL[MEL.length - 1][2]++; else MEL.push([i, N[sym], 1]); });
+    const CHORDS = [[60, 64, 67], [59, 62, 67], [57, 60, 64], [53, 57, 60]];
+    const BASS = [36, 43, 45, 41];
+    // --- instruments ---
+    function filtered(c, out, type, freq, q) { const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q || 1; f.connect(out); return f; }
+    function bell(c, out, n, t, vol, dur) {
+      const f = hz(n);
+      osc(c, 'sine', f, t, dur, env(c, out, t, vol, dur));
+      osc(c, 'sine', f * 2.76, t, dur * 0.5, env(c, out, t, vol * 0.4, dur * 0.5));
+      osc(c, 'sine', f * 5.4, t, dur * 0.2, env(c, out, t, vol * 0.15, dur * 0.2));
+    }
+    function pad(c, out, notes, t, dur, vol, cutoff, types) {
+      const f = filtered(c, out, 'lowpass', cutoff || 1400, 0.7);
+      const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.3);
+      g.gain.setValueAtTime(vol, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); g.connect(f);
+      notes.forEach(n => (types || [-8, 8]).forEach(det => { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(n); o.detune.value = det; o.connect(g); o.start(t); o.stop(t + dur + 0.05); }));
+    }
+    function chorus(c, out, n, t, vol, dur) {   // wobbly detuned triangles with a slow vibrato
+      const g = env(c, out, t, vol, dur);
+      const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 5.5; lg.gain.value = 18; lfo.connect(lg); lfo.start(t); lfo.stop(t + dur + 0.05);
+      [-12, 12].forEach(det => { const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = hz(n); o.detune.value = det; lg.connect(o.detune); o.connect(g); o.start(t); o.stop(t + dur + 0.05); });
+    }
+    function pluck(c, out, n, t, vol, dur, type, from, to) {   // filter-enveloped pluck (slap bass, brass)
+      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 5; f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(to, t + dur); f.connect(out);
+      osc(c, type, hz(n), t, dur, env(c, f, t, vol, dur));
+    }
+    function lead(c, out, n, t, dur, vol, cutoff) {
+      const f = filtered(c, out, 'lowpass', cutoff || 4000, 2);
+      const g = env(c, f, t, vol, dur);
+      ['sawtooth', 'square'].forEach((ty, k) => { const o = c.createOscillator(); o.type = ty; o.frequency.value = hz(n); o.detune.value = k * 7; o.connect(g); o.start(t); o.stop(t + dur + 0.03); });
+    }
+    function slideWhistle(c, out, t, up) {
+      const o = c.createOscillator(), g = env(c, out, t, 0.18, 0.5); o.type = 'sine';
+      o.frequency.setValueAtTime(up ? 500 : 1600, t); o.frequency.exponentialRampToValueAtTime(up ? 1700 : 600, t + 0.45);
+      const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = 7; lg.gain.value = 25; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + 0.5);
+      o.connect(g); o.start(t); o.stop(t + 0.52);
+    }
+    function coin(c, out, t) { chip(c, out, 83, t, 0.12, 0.08, 8000); chip(c, out, 88, t + 0.07, 0.12, 0.3, 8000); }
+    function boing(c, out, t) {
+      const o = c.createOscillator(), g = env(c, out, t, 0.25, 0.45); o.type = 'sine';
+      o.frequency.setValueAtTime(180, t); o.frequency.exponentialRampToValueAtTime(520, t + 0.08); o.frequency.exponentialRampToValueAtTime(260, t + 0.2);
+      o.frequency.exponentialRampToValueAtTime(420, t + 0.3); o.frequency.exponentialRampToValueAtTime(300, t + 0.42);
+      o.connect(g); o.start(t); o.stop(t + 0.46);
+    }
+    // --- level variations: same motif + C-G/B-Am-F progression, transposed and re-orchestrated ---
+    function variation(o) {
+      const SD = 60 / o.bpm / 2, STEPS = 64;
+      function play(c, out, t, i) {
+        const bar = i >> 3, pos = i & 7, ch = bar & 3, second = bar >= 4, m = i % 32, tr = o.tr;
+        const sw = (pos % 2 && o.swing) ? SD * o.swing : 0;   // swing the off-beat eighths
+        for (const [st, n, d] of MEL) if (st === m) o.lead(c, out, n + tr + (o.leadOct || 0), t + sw, d * SD, second);
+        o.backing(c, out, t, sw, pos, bar, CHORDS[ch].map(n => n + tr), BASS[ch] + tr, second, SD);
+      }
+      return { BPM: o.bpm, SD, STEPS, play };
+    }
+    const L2 = variation({   // Cloud Kingdom: airy, bells + pads, light drums
+      bpm: 132, tr: 5, leadOct: 0,
+      lead: (c, out, n, t, dur, second) => { bell(c, out, n, t, 0.2, Math.max(0.5, dur * 1.6)); if (second) bell(c, out, n + 12, t + 0.01, 0.06, 0.6); },
+      backing: (c, out, t, sw, pos, bar, chord, root, second, SD) => {
+        if (pos === 0) pad(c, out, chord, t, SD * 8.4, 0.05, 1100);
+        if (pos % 2 === 1) bell(c, out, chord[(pos >> 1) % 3] + 12, t, 0.04, 0.4);
+        if (pos === 0 || pos === 3) osc(c, 'sine', hz(root), t, SD * 2.5, env(c, out, t, 0.45, SD * 2.5));
+        if (pos === 4 || pos === 7) osc(c, 'sine', hz(root + 12), t, SD * 1.5, env(c, out, t, 0.25, SD * 1.5));
+        if (pos === 0) kick(c, out, t, 0.3);
+        if (pos === 4) nz(c, out, t, 0.07, 0.06, 'bandpass', 3000);
+        nz(c, out, t, 0.018, 0.04, 'highpass', 9000);
+      }
+    });
+    const L3 = variation({   // Rooftop City: funky - slap bass, brass stabs, swing hats
+      bpm: 112, tr: 2, swing: 0.22,
+      lead: (c, out, n, t, dur, second) => { pluck(c, out, n, t, 0.14, dur * 0.9, 'square', 4200, 900); if (second) pluck(c, out, n - 12, t, 0.06, dur * 0.9, 'sawtooth', 2500, 600); },
+      backing: (c, out, t, sw, pos, bar, chord, root, second, SD) => {
+        const slap = { 0: 0, 1: 12, 3: 0, 4: 0, 5: 12, 6: 0, 7: 12 };
+        if (slap[pos] !== undefined) pluck(c, out, root + slap[pos], t + sw, slap[pos] ? 0.22 : 0.4, SD * (slap[pos] ? 0.4 : 0.8), 'sawtooth', slap[pos] ? 3000 : 1800, 200);
+        if (pos === 3 || pos === 6 || (second && pos === 7)) chord.forEach(n => pluck(c, out, n + 12, t + sw, 0.05, SD * 0.7, 'sawtooth', 3500, 700));   // brass stabs
+        if (pos === 0 || pos === 3 || (second && pos === 5)) kick(c, out, t + sw, 0.6);
+        if (pos === 2 || pos === 6) nz(c, out, t, 0.2, 0.1, 'bandpass', 1600);
+        nz(c, out, t + sw, pos % 2 ? 0.03 : 0.055, pos === 7 ? 0.12 : 0.03, 'highpass', 8000);
+      }
+    });
+    const L4 = variation({   // Deep Blue Bay: watery marimba + wobbly chorus, laid back
+      bpm: 116, tr: -2, swing: 0.12,
+      lead: (c, out, n, t, dur, second) => { marimba(c, out, n, t, 0.4, dur * 1.5); if (second) chorus(c, out, n - 12, t, 0.06, dur * 0.95); },
+      backing: (c, out, t, sw, pos, bar, chord, root, second, SD) => {
+        if (pos === 0) chord.forEach(n => chorus(c, out, n, t, 0.03, SD * 7.5));
+        if (pos % 2 === 1) marimba(c, out, chord[(pos + bar) % 3] + 12, t + sw, 0.08, 0.25);
+        if (pos === 0 || pos === 5) osc(c, 'sine', hz(root), t + sw, SD * 2.5, env(c, out, t + sw, 0.5, SD * 2.5));
+        if (pos === 3) osc(c, 'sine', hz(root + 12), t + sw, SD, env(c, out, t + sw, 0.25, SD));
+        if (pos === 0) kick(c, out, t, 0.35);
+        if (pos === 6) nz(c, out, t, 0.08, 0.05, 'bandpass', 2600);
+        nz(c, out, t + sw, 0.02, 0.06, 'bandpass', 6000);   // shaker
+      }
+    });
+    const L5 = variation({   // Star Station: synthwave - arps, big pads, faster
+      bpm: 160, tr: 7, leadOct: 0,
+      lead: (c, out, n, t, dur, second) => { lead(c, out, n, t, dur * 0.95, 0.12, second ? 5000 : 3000); lead(c, out, n - 12, t, dur * 0.95, 0.05, 1800); },
+      backing: (c, out, t, sw, pos, bar, chord, root, second, SD) => {
+        if (pos === 0) pad(c, out, chord.concat([chord[0] + 12]), t, SD * 8.3, 0.045, second ? 2600 : 1500, [-12, 0, 12]);
+        const arp = chord.concat([chord[0] + 12, chord[1] + 12]);
+        for (let h = 0; h < 2; h++) chip(c, out, arp[(pos * 2 + h) % arp.length] + 12, t + h * SD / 2, 0.04, SD * 0.45, 1200 + bar * 500);
+        pluck(c, out, root + (pos % 2 ? 12 : 0), t, 0.3, SD * 0.8, 'sawtooth', 1400, 150);
+        if (pos % 2 === 0) kick(c, out, t, 0.6);
+        if (pos === 2 || pos === 6) nz(c, out, t, 0.2, 0.3, 'bandpass', 1400);
+        if (pos % 2 === 1) nz(c, out, t, 0.05, 0.05, 'highpass', 8000);
+      }
+    });
+    // --- celebration: Dm7 -> Em7 -> F -> G (rising) ---
+    const CEL = [[62, 65, 69, 72], [64, 67, 71, 74], [65, 69, 72, 77], [67, 71, 74, 79]];
+    const CROOT = [38, 40, 41, 43];
+    function celebrate(c, out, t, chord, root, pos, SD, big) {
+      if (pos % 2 === 0) chord.forEach(n => lead(c, out, n, t, SD * 1.6, 0.035, 3500));
+      chip(c, out, chord[pos % 4] + 12, t, 0.08, SD * 0.9, 6000);
+      if (pos % 2 === 0) osc(c, 'triangle', hz(root + (pos === 2 ? 12 : 0)), t, SD * 1.8, env(c, out, t, 0.5, SD * 1.8));
+      if (pos === 0) kick(c, out, t, 0.6);
+      if (big && pos === 2) nz(c, out, t, 0.18, 0.1, 'bandpass', 1700);
+      nz(c, out, t, 0.04, 0.03, 'highpass', 8000);
+    }
+    const Jingle = (function () {   // level complete: ~5 s, plays once
+      const SD = 60 / 140 / 2, STEPS = 24;
+      function play(c, out, t, i) {
+        if (i < 16) {
+          const k = i >> 2, pos = i & 3;
+          celebrate(c, out, t, CEL[k], CROOT[k], pos, SD, true);
+          if (i === 0) slideWhistle(c, out, t, true);
+          if (pos === 0 && k > 0 && k < 3) coin(c, out, t);
+          if (i === 14) boing(c, out, t);
+        } else if (i === 16) {   // landing on a big C major
+          [60, 64, 67, 72, 76].forEach(n => lead(c, out, n, t, SD * 7, 0.05, 4500));
+          [72, 76, 79, 84].forEach((n, j) => bell(c, out, n, t + j * 0.05, 0.12, 1.4));
+          osc(c, 'triangle', hz(36), t, SD * 6, env(c, out, t, 0.6, SD * 6));
+          kick(c, out, t, 0.7); nz(c, out, t, 0.3, 1.2, 'highpass', 3000); coin(c, out, t + 0.1);
+        }
+      }
+      return { BPM: 140, SD, STEPS, play, once: true };
+    })();
+    const Victory = (function () {   // final win: looping, 8 bars (progression twice, second time fuller)
+      const SD = 60 / 140 / 2, STEPS = 64;
+      function play(c, out, t, i) {
+        const bar = i >> 3, pos = i & 7, k = bar & 3, second = bar >= 4;
+        const chord = CEL[k];
+        if (pos % 2 === 0) chord.forEach(n => lead(c, out, n, t, SD * 1.8, 0.03, second ? 4500 : 2500));
+        for (const [st, n, d] of MEL) if (st === (i % 32)) lead(c, out, n + 2 * 0, t, d * SD, 0.1, 4500);   // the main motif returns
+        chip(c, out, chord[pos % 4] + 24, t, second ? 0.05 : 0.03, SD * 0.5, 7000);
+        osc(c, 'triangle', hz(CROOT[k] + (pos % 2 ? 12 : 0)), t, SD * 0.9, env(c, out, t, 0.45, SD * 0.9));
+        if (pos % 4 === 0) kick(c, out, t, 0.6);
+        if (pos === 2 || pos === 6) nz(c, out, t, 0.18, 0.12, 'bandpass', 1700);
+        nz(c, out, t, pos % 2 ? 0.03 : 0.05, 0.03, 'highpass', 8000);
+        if (pos === 0 && k === 0) slideWhistle(c, out, t, true);
+        if (pos === 4 && (k === 1 || k === 2)) coin(c, out, t);
+        if (pos === 6 && k === 3) boing(c, out, t);
+      }
+      return { BPM: 140, SD, STEPS, play };
+    })();
+    return { L2, L3, L4, L5, Jingle, Victory };
+  })();
+  SONGS.level2 = { custom: Vars.L2 }; SONGS.level3 = { custom: Vars.L3 }; SONGS.level4 = { custom: Vars.L4 }; SONGS.level5 = { custom: Vars.L5 };
+  SONGS.complete = { custom: Vars.Jingle }; SONGS.victory = { custom: Vars.Victory };
+  window.RNRSongs = SONGS;
+
   let currentTrack = null, pendingTrack = null, trackOut = null, synthTimer = null, step = 0, nextTime = 0, playingFile = null;
   const midi = n => 440 * Math.pow(2, (n - 69) / 12);
 
   function scheduleSynth() {
     const song = SONGS[currentTrack]; if (!song || !ctx) return;
     if (song.custom) {
-      while (nextTime < ctx.currentTime + 0.15) { song.custom.play(ctx, trackOut, nextTime, step % song.custom.STEPS); nextTime += song.custom.SD; step++; }
+      while (nextTime < ctx.currentTime + 0.15) {
+        if (song.custom.once && step >= song.custom.STEPS) { stopSynth(); return; }
+        song.custom.play(ctx, trackOut, nextTime, step % song.custom.STEPS); nextTime += song.custom.SD; step++;
+      }
       return;
     }
     const stepDur = 60 / song.bpm / 2;

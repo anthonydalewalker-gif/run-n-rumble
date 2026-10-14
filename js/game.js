@@ -50,7 +50,7 @@
 
   function setState(s) {
     // Entering gameplay: ignore any finger that was already down (e.g. the one that tapped PLAY/RETRY).
-    if ((s === 'intro' || s === 'play') && ['title', 'levels', 'paused', 'gameover', 'complete', 'victory', 'cutscene'].includes(G.state)) Input.ignoreBefore = performance.now();
+    if ((s === 'intro' || s === 'play') && ['title', 'levels', 'paused', 'gameover', 'complete', 'victory', 'cutscene', 'runoff'].includes(G.state)) Input.ignoreBefore = performance.now();
     G.state = s; G.stateT = 0;
   }
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -711,7 +711,7 @@
 
   function win() {
     W.won = true;
-    Sound.play('complete');
+    Sound.playMusic('complete');
     P.vx = 0; P.vy = -400; P.onGround = false;
     for (let i = 0; i < 60; i++) W.parts.push({ x: W.exit.x + rand(-80, 80), y: rand(40, 140), vx: rand(-60, 60), vy: rand(-120, 20), life: 0, max: rand(1.5, 2.5), kind: 'confetti', col: ['#ff5fa0', '#ffe14a', '#8af05a', '#5ec8ff', '#b65cff'][i % 5], size: rand(3, 5), rot: rand(0, 6), vr: rand(-10, 10) });
     const timeLeft = Math.floor(W.time);
@@ -801,8 +801,14 @@
       case 'title':
         Sound.playMusic('title');
         if (act === 'play' || (act === null && anyTap() && G.stateT > 0.3 && Input.taps.every(tp => !(tp.x > VW - 60 && tp.y < 60)))) {
-          Sound.play('click'); tryFullscreen(); setState('levels');
+          Sound.play('click'); tryFullscreen(); startRunoff();
         }
+        if (act === 'levels') { Sound.play('click'); tryFullscreen(); setState('levels'); }
+        break;
+      case 'runoff':
+        if (W) W.t += dt;
+        if (P) { P.run += dt * 210 * 0.09; P.blinkT = 9; }
+        if (G.stateT > RUNOFF_LEN || (G.stateT > 0.25 && anyTap())) { P.x = 60; P.y = surfaceAt(60); P.vx = 0; P.run = 0; W.camX = 0; setState('intro'); }
         break;
       case 'levels':
         if (act && act.startsWith('level_')) {
@@ -870,7 +876,7 @@
   function isControlTap(tp) { return Input.zoneAt(tp.x, tp.y) !== null; }
   const CUT_LEN = 4.6;
   function endCutscene() {
-    if (G.cut >= window.LEVELS.length) { Sound.play('complete'); save.beaten = true; persist(); G.confetti = []; setState('victory'); Sound.playMusic('title'); }
+    if (G.cut >= window.LEVELS.length) { save.beaten = true; persist(); G.confetti = []; setState('victory'); Sound.playMusic('victory'); }
     else { G.levelStartScore = G.score; startLevel(G.cut, true); }
   }
   function stepWorld(dt) {
@@ -886,6 +892,7 @@
     ctx.imageSmoothingEnabled = true;
     switch (G.state) {
       case 'title': renderTitle(); break;
+      case 'runoff': renderRunoff(); break;
       case 'cutscene': renderCutscene(); break;
       case 'levels': renderLevels(); break;
       case 'victory': renderVictory(); break;
@@ -929,7 +936,39 @@
     ctx.restore();
     uiBtns.push({ id: 'play', x: VW / 2 - 140, y: 180, w: 280, h: 44, primary: true });
     if (save.high > 0) D.text(ctx, 'HIGH SCORE ' + save.high, VW / 2, 338, 14, '#fff', { sw: 4 });
+    button('levels', 14 + SAFE_L, VH - 50, 110, 38, 'LEVELS', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
     iconButton('mute', VW - 30 - SAFE_R, 28, 17, muteIcon);
+  }
+  // Seamless start: Tubby dashes off the title, the title slides away and Level 1 fades in under him.
+  const RUNOFF_LEN = 1.8;
+  function startRunoff() {
+    G.score = 0; G.levelStartScore = 0;
+    G.titleScroll = G.t * 60;
+    startLevel(0, true);           // builds Level 1 + crossfades title music into the L1 theme
+    G.state = 'runoff'; G.stateT = 0;
+    P.x = -40;
+  }
+  function renderRunoff() {
+    const k = G.stateT, t = G.t, ease = x => x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x);
+    const out = ease(k / 0.9), fadeIn = ease((k - 0.7) / 0.6);
+    G.titleScroll += out * 9;
+    const hx = VW / 2 + Math.pow(Math.min(1, k / 0.85), 2) * (VW / 2 + 90);
+    if (fadeIn > 0) { P.x = -40 + ease((k - 0.9) / 0.85) * 100; renderWorld(); if (fadeIn >= 1) renderHUD(); }
+    if (fadeIn < 1) {
+      ctx.save(); ctx.globalAlpha = 1 - fadeIn; menuBackground(G.titleScroll); ctx.restore();
+      // title slides up and away
+      ctx.save(); ctx.globalAlpha = 1 - out; ctx.translate(0, -out * 220);
+      D.logo(ctx, VW / 2, 92, Math.min(1.5, VW / 520), t);
+      D.text(ctx, 'Starring Tubby Dash', VW / 2, 146, 15, '#fff', { sw: 4 });
+      ctx.restore();
+      // Tubby dashes right with dust
+      if (k < 0.85) {
+        ctx.fillStyle = 'rgba(255,255,255,.6)';
+        for (let i = 1; i < 5; i++) { D.circ(ctx, hx - 30 * i - 10, 296 - (i % 2) * 6, 7 - i); ctx.fill(); }
+        heroPose(hx, 300, t, { scale: 1.6, run: t * 30, speed: 2, sx: 1.08, sy: 0.95 });
+      }
+    }
+    if (k > 0.25) D.text(ctx, 'TAP TO SKIP ▶', VW / 2, VH - 14, 11, 'rgba(255,255,255,.85)', { sw: 3 });
   }
 
   function renderLevels() {
