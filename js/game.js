@@ -9,7 +9,19 @@
   // Tubby Dash: the one and only hero. Balanced stats.
   const HERO = { name: 'Tubby Dash', speed: 210, jump: 680, w: 24, h: 40 };
   const POWER_NAMES = { speed: 'SPEED BOOST!', power: 'POWER UP!', shield: 'SHIELD!', highjump: 'HIGH JUMP!', tough: 'TOUGH! HALF DAMAGE' };
-  const EXIT_NAMES = { tree: 'the big tree', rainbow: 'the rainbow', pier: 'the harbor gate', submarine: 'the submarine', rocket: 'the rocket' };
+  const EXIT_NAMES = { tree: 'the big tree', rainbow: 'the rainbow', pier: 'the harbor gate', submarine: 'the submarine', rocket: 'the rocket', portal: 'the portal home' };
+  // Story: each friend is trapped in a level (by level index); L5's exit is the portal back to the TV.
+  const FRIEND_LEVEL = { pipple: 1, lunker: 2, squib: 3 };
+  const FRIEND_KEYS = ['pipple', 'lunker', 'squib'];
+  const STORY_BEATS = [
+    'Pipple is somewhere up in the clouds!',
+    'Pipple is free! Lunker was spotted in the city...',
+    'Lunker is back! Squib must be under the sea...',
+    'All friends found! Find the portal home in space!',
+    'Through the portal... back to the living room!'
+  ];
+  function friendsBefore(idx) { return FRIEND_KEYS.filter(k => FRIEND_LEVEL[k] < idx); }
+  function friendsWith() { return friendsBefore(G.levelIdx).concat(W && W.cage && W.cage.freed ? [W.cage.kind] : []); }
 
   // ---------- canvas / scaling ----------
   const canvas = document.getElementById('game');
@@ -50,7 +62,7 @@
 
   function setState(s) {
     // Entering gameplay: ignore any finger that was already down (e.g. the one that tapped PLAY/RETRY).
-    if ((s === 'intro' || s === 'play') && ['title', 'levels', 'paused', 'gameover', 'complete', 'victory', 'cutscene', 'runoff'].includes(G.state)) Input.ignoreBefore = performance.now();
+    if ((s === 'intro' || s === 'play') && ['title', 'levels', 'paused', 'gameover', 'complete', 'victory', 'cutscene', 'runoff', 'story'].includes(G.state)) Input.ignoreBefore = performance.now();
     G.state = s; G.stateT = 0;
   }
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -93,6 +105,9 @@
     def.jellies.forEach(([x, y]) => w.ents.push({ type: 'jelly', x, y, baseY: y, w: 26, h: 26, state: 'alive', passed: false, t: rand(0, 5) }));
     const ex = def.exit;
     w.exit = { x: ex.x, kind: ex.kind, y: ex.kind === 'submarine' ? waterY(ex.x) + 14 : surfaceAt(ex.x, true) };
+    const fk = FRIEND_KEYS.find(k => FRIEND_LEVEL[k] === idx);
+    if (fk) { const cx = ex.x - 250; w.cage = { kind: fk, x: cx, y: surfaceAt(cx, true), open: 0, freed: false }; }
+    w.hist = [];
     // decoration
     let k = 0;
     def.ground.forEach(([x0, x1, top]) => {
@@ -363,6 +378,7 @@
     if (P.onGround && !P.swim && Math.abs(P.vx) > 120) { P.dustT -= dt; if (P.dustT < 0) { P.dustT = 0.12; burst(P.x - P.face * 8, P.y, 1, 'dust', '#e8dcc0', 30); } }
     if (fast) { P.trailT -= dt; if (P.trailT < 0) { P.trailT = 0.045; P.trail.push({ x: P.x, y: P.y, face: P.face, a: 0.5 }); } }
     P.trail.forEach(tr => tr.a -= dt * 2); P.trail = P.trail.filter(tr => tr.a > 0);
+    W.hist.push({ x: P.x, y: P.y, g: P.onGround && !P.swim, f: P.face, s: Math.abs(P.vx) / 120 }); if (W.hist.length > 120) W.hist.shift();
     // fell into a gap
     if (P.y > (W.def.seabed ? 2000 : VH + 60)) {
       if (G.rescue) { G.rescues++; (G.rescueAt = G.rescueAt || []).push(Math.round(P.x)); let x = P.x; while (surfaceAt(x, true) === null && x < W.def.length) x += 20; P.x = x + 20; P.y = surfaceAt(P.x, true) - 1; P.vy = 0; return; }
@@ -680,6 +696,17 @@
     }
     updateEnts(dt);
     // exit
+    const Cg = W.cage;
+    if (Cg) {
+      if (!Cg.freed && !P.dead && P.x > Cg.x - 26 && Math.abs(P.y - Cg.y) < 160) {
+        Cg.freed = true; Sound.play('powerup'); Sound.play('boing');
+        const F = D.FRIENDS[Cg.kind];
+        burst(Cg.x, Cg.y - 34, 26, 'spark', 'rgb(' + F.glow + ')', 220); burst(Cg.x, Cg.y - 34, 10, 'confetti', '#ffe14a', 160);
+        addScore(1000, Cg.x, Cg.y - 80, F.name + ' rescued!');
+        banner(F.name.toUpperCase() + ' RESCUED!', 'Your friend will follow you now', 2.4);
+      }
+      if (Cg.freed) Cg.open = Math.min(1, Cg.open + dt * 2.5);
+    }
     const X = W.exit;
     if (!P.dead && !W.won && Math.abs(P.x - X.x) < (X.kind === 'submarine' ? 50 : 34) && P.y > X.y - 140) win();
     for (const s of W.solids) if (s.bump > 0) s.bump = Math.max(0, s.bump - dt * 5);
@@ -801,9 +828,17 @@
       case 'title':
         Sound.playMusic('title');
         if (act === 'play' || (act === null && anyTap() && G.stateT > 0.3 && Input.taps.every(tp => !(tp.x > VW - 60 && tp.y < 60)))) {
-          Sound.play('click'); tryFullscreen(); startRunoff();
+          Sound.play('click'); tryFullscreen();
+          if (!save.storySeen) { G.storyThen = 'play'; setState('story'); } else startRunoff();
         }
         if (act === 'levels') { Sound.play('click'); tryFullscreen(); setState('levels'); }
+        if (act === 'story') { Sound.play('click'); tryFullscreen(); G.storyThen = 'title'; setState('story'); }
+        break;
+      case 'story':
+        if (G.stateT > STORY_LEN || (G.stateT > 0.4 && anyTap())) {
+          save.storySeen = true; persist();
+          if (G.storyThen === 'play') startRunoff(); else setState('title');
+        }
         break;
       case 'runoff':
         if (W) W.t += dt;
@@ -857,7 +892,7 @@
         if (act === 'menu') { Sound.play('click'); setState('title'); }
         break;
       case 'cutscene':
-        if (G.stateT > CUT_LEN || (G.stateT > 0.5 && (anyTap() || act))) endCutscene();
+        if (G.stateT > (G.cut >= 5 ? 7 : CUT_LEN) || (G.stateT > 0.5 && (anyTap() || act))) endCutscene();
         break;
       case 'victory':
         if (Math.random() < 0.4) victoryConfetti();
@@ -893,6 +928,7 @@
     switch (G.state) {
       case 'title': renderTitle(); break;
       case 'runoff': renderRunoff(); break;
+      case 'story': renderStory(); break;
       case 'cutscene': renderCutscene(); break;
       case 'levels': renderLevels(); break;
       case 'victory': renderVictory(); break;
@@ -937,6 +973,7 @@
     uiBtns.push({ id: 'play', x: VW / 2 - 140, y: 180, w: 280, h: 44, primary: true });
     if (save.high > 0) D.text(ctx, 'HIGH SCORE ' + save.high, VW / 2, 338, 14, '#fff', { sw: 4 });
     button('levels', 14 + SAFE_L, VH - 50, 110, 38, 'LEVELS', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
+    button('story', VW - 124 - SAFE_R, VH - 50, 110, 38, 'STORY', { col: ['#ff9ab8', '#e0306e'], size: 14 });
     iconButton('mute', VW - 30 - SAFE_R, 28, 17, muteIcon);
   }
   // Seamless start: Tubby dashes off the title, the title slides away and Level 1 fades in under him.
@@ -1014,7 +1051,7 @@
     else if (kind === 'rainbow') { ctx.scale(0.36, 0.36); D.rainbowExit(ctx, -70, 30, t); }
     else if (kind === 'pier') { ctx.scale(0.5, 0.5); D.pierExit(ctx, 0, 50, t); }
     else if (kind === 'submarine') { ctx.scale(0.62, 0.62); D.submarine(ctx, 0, 24, t, 0); }
-    else { ctx.scale(0.42, 0.42); D.rocket(ctx, 0, 60, t, 0.3); }
+    else { ctx.scale(0.42, 0.42); D.portal(ctx, 0, 70, t); }
     ctx.restore();
   }
   G.confetti = [];
@@ -1028,13 +1065,18 @@
     ctx.fillStyle = 'rgba(255,240,160,.18)'; ctx.fillRect(0, 0, VW, VH);
     for (const c of G.confetti) { ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rot); ctx.fillStyle = c.col; ctx.fillRect(-3, -1.5, 6, 3); ctx.restore(); }
     D.text(ctx, 'YOU WIN!', VW / 2, 52, 44, '#ffde3a', { sw: 9 });
-    D.text(ctx, 'Tubby Dash made it through all five worlds!', VW / 2, 92, 16, '#fff', { sw: 4 });
+    D.text(ctx, 'Tubby Dash rescued his friends and made it home!', VW / 2, 92, 16, '#fff', { sw: 4 });
     D.text(ctx, 'FINAL SCORE  ' + G.score, VW / 2, 124, 22, '#8af05a', { sw: 5 });
     D.text(ctx, G.score >= save.high ? '★ NEW HIGH SCORE ★' : 'HIGH SCORE ' + save.high, VW / 2, 150, 13, '#fff', { sw: 3 });
     const hop = Math.abs(Math.sin(t * 6)) * 34;
     ctx.fillStyle = 'rgba(0,0,0,.15)'; D.ell(ctx, VW / 2, 301, 34 - hop * 0.5, 5); ctx.fill();
-    heroPose(VW / 2, 300 - hop, t, { scale: 1.8, ground: hop < 2, air: hop > 2, sy: hop < 3 ? 0.9 : 1.05, sx: hop < 3 ? 1.1 : 0.97 });
-    D.rocket(ctx, VW - 80 - SAFE_R, 300, t, 0);
+    FRIEND_KEYS.forEach((k, i) => {
+      const hx = VW / 2 + [-150, 110, 190][i], hh = Math.abs(Math.sin(t * (k === 'pipple' ? 8 : 5) + i * 1.3)) * (k === 'pipple' ? 40 : 22);
+      ctx.fillStyle = 'rgba(0,0,0,.15)'; D.ell(ctx, hx, 301, 24, 4); ctx.fill();
+      D.friend(ctx, k, hx, 300 - hh, { t, scale: 1.5, air: hh > 2, ground: hh <= 2, glow: 0.7, face: i === 0 ? 1 : -1, blink: ((t + i) % 3.2) < 0.1 });
+    });
+    heroPose(VW / 2 - 30, 300 - hop, t, { scale: 1.8, ground: hop < 2, air: hop > 2, sy: hop < 3 ? 0.9 : 1.05, sx: hop < 3 ? 1.1 : 0.97 });
+    D.portal(ctx, VW - 70 - SAFE_R, 300, t);
     D.tree(ctx, 80 + SAFE_L, 300, 1, t, true);
     button('again', VW / 2 - 170, VH - 46, 160, 38, 'PLAY AGAIN', { primary: true, size: 15 });
     button('menu', VW / 2 + 10, VH - 46, 160, 38, 'MENU', { col: ['#ff9ab8', '#e0306e'], size: 15 });
@@ -1104,6 +1146,8 @@
           break;
       }
     }
+    if (W.cage && W.cage.open < 1) D.friendCage(ctx, W.cage.kind, W.cage.x, W.cage.y, t, W.cage.open);
+    drawFollowers(t);
     drawPlayer();
     for (const e of W.ents) {
       if (e.type === 'fire') { if (e.laser) D.laser(ctx, e.x, e.y, e.t); else D.fireball(ctx, e.x, e.y, e.t); }
@@ -1154,11 +1198,24 @@
     if (e.state === 'bumped') { ctx.save(); ctx.translate(e.x, e.y - e.h / 2); ctx.scale(1, -1); fn(ctx, 0, e.h / 2, o); ctx.restore(); }
     else fn(ctx, e.x, e.y, o);
   }
+  function drawFollowers(t) {
+    const list = friendsWith(), H = W.hist;
+    if (!H || !H.length) return;
+    list.forEach((k, i) => {
+      const h = H[Math.max(0, H.length - 1 - (i + 1) * 9)];
+      const just = W.cage && W.cage.kind === k && W.cage.open < 1;
+      const x = just ? W.cage.x + (h.x - W.cage.x) * W.cage.open : h.x - h.f * (24 + i * 24);
+      const y = just ? W.cage.y - 30 * Math.sin(W.cage.open * Math.PI) : h.y;
+      const sp = Math.min(1, h.s);
+      D.friend(ctx, k, x, y, { t, face: h.f, run: t * 14, speed: sp, ground: h.g, air: !h.g, glow: 0.25 + sp * 0.75, blink: ((t + i) % 3.1) < 0.1, roll: k === 'squib' && sp > 0.5 && (Math.floor(t * 0.7) % 2 === 0) ? (t * 12 % (Math.PI * 2)) * h.f : 0 });
+    });
+  }
   function drawExit(X, t) {
     if (X.kind === 'tree') { D.tree(ctx, X.x, X.y, 1, t, true); D.sign(ctx, X.x - 80, X.y, 'GOAL!'); }
     else if (X.kind === 'rainbow') { D.rainbowExit(ctx, X.x, X.y, t); D.sign(ctx, X.x - 70, X.y, 'GOAL!'); }
     else if (X.kind === 'pier') D.pierExit(ctx, X.x, X.y, t);
     else if (X.kind === 'submarine') D.submarine(ctx, X.x, X.y + Math.sin(t * 2) * 3, t, Math.sin(t * 1.5) * 0.04);
+    else if (X.kind === 'portal') { D.portal(ctx, X.x, X.y, t); D.sign(ctx, X.x - 80, X.y, 'HOME!'); }
     else if (X.kind === 'rocket') { D.rocket(ctx, X.x, X.y, t, 0); D.sign(ctx, X.x - 70, X.y, 'GOAL!'); }
     // pulsing marker
     const a = 0.5 + 0.5 * Math.sin(t * 5);
@@ -1285,7 +1342,11 @@
     ctx.fillStyle = '#8af05a'; D.rr(ctx, bx + 12, 20, Math.max(6, (bw - 34) * prog), 6, 3); ctx.fill();
     ctx.fillStyle = '#ffde3a'; D.star(ctx, bx + bw - 14, 23, 7, 0); ctx.fill();
     D.tubby(ctx, bx + 12 + (bw - 34) * prog, 31, { scale: 0.42, ground: true, t: W.t, speed: 0 });
-    // timer
+    // friends rescued
+    ctx.fillStyle = 'rgba(20,30,60,.45)'; D.rr(ctx, L, 42, 112, 26, 13); ctx.fill();
+    const have = friendsWith();
+    FRIEND_KEYS.forEach((k, i) => { const on = have.includes(k); ctx.save(); ctx.globalAlpha = on ? 1 : 0.3; D.friend(ctx, k, L + 18 + i * 26, 66, { t: W.t, scale: k === 'lunker' ? 0.36 : 0.5, glow: on ? 0.5 : 0 }); ctx.restore(); });
+    D.text(ctx, have.length + '/3', L + 98, 55, 11, '#fff', { sw: 3 });
     const low = W.time < 30;
     ctx.fillStyle = 'rgba(20,30,60,.45)'; D.rr(ctx, VW / 2 - 6, 8, 70, 30, 15); ctx.fill();
     D.text(ctx, fmtTime(W.time), VW / 2 + 29, 23, 17, low && Math.sin(G.t * 10) > 0 ? '#ff5050' : '#fff', { sw: 3 });
@@ -1401,11 +1462,134 @@
     }
   }
 
+  // ---------- story intro (comic panels, tap to skip) ----------
+  const STORY_LEN = 13;
+  const STORY_PANELS = [
+    [0, 'One lazy afternoon, Tubby Dash and his friends were gaming on the couch...'],
+    [3, '...until somebody bumped the soda! SPLASH!'],
+    [5.5, 'ZZZAP! The TV sparked and fizzed...'],
+    [7.5, '...and sucked all four of them into the game!'],
+    [10, 'They got scattered! Tubby must rescue his friends and find the way home!']
+  ];
+  function couchCrew(room, t, o) {
+    o = o || {};
+    const crew = ['pipple', 'tubby', 'lunker', 'squib'];
+    crew.forEach((c, i) => {
+      const x = room.couchX - 105 + i * 70, y = room.seatY + 2;
+      const lean = o.lean ? Math.sin(t * 9 + i) * 3 : 0;
+      ctx.save(); ctx.translate(x, y); ctx.rotate((o.shock ? Math.sin(t * 30 + i) * 0.06 : 0) + lean * 0.02);
+      if (c === 'tubby') D.tubby(ctx, 0, 0, { t, scale: 1.3, ground: true, hurt: o.shock, blink: (t % 3) < 0.1 });
+      else D.friend(ctx, c, 0, 0, { t, scale: 1.3, glow: 0, blink: ((t + i) % 3.3) < 0.1 });
+      // controller
+      ctx.fillStyle = '#2a2a34'; D.rr(ctx, 4, -24 - (c === 'lunker' ? 10 : 0), 18, 9, 4); ctx.fill();
+      ctx.fillStyle = '#ff4a4a'; D.circ(ctx, 18, -20 - (c === 'lunker' ? 10 : 0), 1.6); ctx.fill();
+      ctx.restore();
+    });
+  }
+  function renderStory() {
+    const t = G.stateT, ease = x => x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x);
+    let pi = 0; STORY_PANELS.forEach((p, i) => { if (t >= p[0]) pi = i; });
+    const pt = t - STORY_PANELS[pi][0];
+    ctx.fillStyle = '#1b2a4a'; ctx.fillRect(0, 0, VW, VH);
+    // comic panel frame (slight zoom-in per panel)
+    const m = 14, z = 1 + Math.min(pt, 3) * 0.015;
+    ctx.save(); D.rr(ctx, m, m, VW - 2 * m, VH - 60, 14); ctx.clip();
+    ctx.translate(VW / 2, VH / 2); ctx.scale(z, z); ctx.translate(-VW / 2, -VH / 2);
+    if (pi <= 3) {
+      const screen = pi === 0 || pi === 1 ? 'game' : pi === 2 ? 'static' : 'swirl';
+      const room = D.livingRoom(ctx, VW, VH, G.t, { screen });
+      if (pi < 3) couchCrew(room, G.t, { lean: pi === 0, shock: pi === 2 });
+      // soda cup on the armrest -> tips -> splash on the TV
+      const cupX = room.couchX + 152, cupY = 196;
+      if (pi === 0) { drawCup(cupX, cupY, 0); }
+      if (pi === 1) {
+        const tip = ease(pt / 0.6);
+        drawCup(cupX + tip * 20, cupY, tip * 1.9);
+        const fl = ease((pt - 0.4) / 1.2);
+        if (fl > 0) {
+          ctx.strokeStyle = '#8a4a1a'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(cupX + 26, cupY - 8);
+          ctx.quadraticCurveTo((cupX + room.tvX) / 2, cupY - 120, cupX + 26 + (room.tvX - 40 - cupX - 26) * fl, cupY - 8 + (room.tvY - cupY + 8) * fl); ctx.stroke();
+          for (let i = 0; i < 8; i++) { ctx.fillStyle = 'rgba(160,90,40,.85)'; D.circ(ctx, room.tvX - 40 + Math.sin(i * 3) * 30 * fl, room.tvY + i * 6 * fl, 4); ctx.fill(); }
+        }
+        if (pt > 1.6) D.text(ctx, 'SPLASH!', room.tvX, room.tvY - 70, 28, '#5ec8ff', { sw: 6 });
+      }
+      if (pi === 2) {
+        drawCup(cupX + 20, cupY + 30, 1.9);
+        for (let i = 0; i < 7; i++) {
+          const a = i / 7 * Math.PI * 2 + G.t * 3, r = 70 + Math.sin(G.t * 20 + i) * 15;
+          ctx.strokeStyle = i % 2 ? '#ffe14a' : '#fff'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(room.tvX + Math.cos(a) * 60, room.tvY + Math.sin(a) * 45);
+          ctx.lineTo(room.tvX + Math.cos(a + 0.2) * (r + 10), room.tvY + Math.sin(a - 0.2) * r); ctx.lineTo(room.tvX + Math.cos(a) * (r + 30), room.tvY + Math.sin(a) * (r + 15)); ctx.stroke();
+        }
+        if (Math.sin(G.t * 40) > 0.6) { ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(0, 0, VW, VH); }
+        D.text(ctx, 'ZZZAP!', room.tvX, room.tvY - 76, 30, '#ffe14a', { sw: 6 });
+      }
+      if (pi === 3) {
+        // swirl pulls everyone (and the cup) into the TV
+        const crew = ['pipple', 'tubby', 'lunker', 'squib'];
+        crew.forEach((c, i) => {
+          const kk = ease((pt - i * 0.25) / 1.6);
+          const sx = room.couchX - 105 + i * 70, sy = room.seatY + 2;
+          const ang = kk * 8 + i;
+          const x = sx + (room.tvX - sx) * kk + Math.cos(ang) * 40 * (1 - kk) * kk * 2;
+          const y = sy + (room.tvY + 10 - sy) * kk + Math.sin(ang) * 30 * (1 - kk) * kk * 2 - Math.sin(kk * Math.PI) * 50;
+          const sc = 1.3 * (1 - kk * 0.9);
+          if (kk >= 1) return;
+          ctx.save(); ctx.translate(x, y); ctx.rotate(kk * 10);
+          if (c === 'tubby') D.tubby(ctx, 0, 0, { t: G.t, scale: sc, air: true, hurt: true }); else D.friend(ctx, c, 0, 0, { t: G.t, scale: sc, air: true, glow: 0.8 });
+          ctx.restore();
+        });
+        ctx.strokeStyle = 'rgba(200,160,255,.6)'; ctx.lineWidth = 3;
+        for (let r = 0; r < 4; r++) { ctx.beginPath(); ctx.arc(room.tvX, room.tvY, 90 + r * 40 - (G.t * 80 % 40), G.t * 4 + r, G.t * 4 + r + 2); ctx.stroke(); }
+        D.text(ctx, 'WHOOOSH!', room.couchX, 90, 28, '#b47aff', { sw: 6 });
+      }
+    } else {
+      // tumbling into the game world and scattering
+      window.THEMES.hills.background(ctx, pt * 40, VW, VH, G.t);
+      ctx.fillStyle = '#5fbf3a'; ctx.fillRect(0, 300, VW, VH);
+      const dirs = [[0.2, -1.2], [-0.2, 0], [1.4, -0.4], [0.9, 1.2]];   // pipple up to the clouds, tubby lands, lunker off right, squib down
+      ['pipple', 'tubby', 'lunker', 'squib'].forEach((c, i) => {
+        const kk = Math.min(1, pt / 1.6);
+        let x = VW / 2 + (i - 1.5) * 20, y = -40 + kk * 260;
+        if (kk >= 0.6) { const q = (kk - 0.6) / 0.4; x += dirs[i][0] * q * VW * 0.5; y += dirs[i][1] * q * 160; }
+        if (c === 'tubby') { y = Math.min(300, -40 + Math.min(1, pt / 1.3) * 340); x = VW / 2 - 20; }
+        ctx.save(); ctx.translate(x, y); if (c !== 'tubby' || y < 300) ctx.rotate(pt * 6 + i);
+        if (c === 'tubby') D.tubby(ctx, 0, 0, { t: G.t, scale: 1.4, air: y < 300, ground: y >= 300, hurt: y < 300 });
+        else D.friend(ctx, c, 0, 0, { t: G.t, scale: 1.2, air: true, glow: 1 });
+        ctx.restore();
+      });
+      if (pt > 1.4) D.text(ctx, 'HELP, TUBBY!', VW / 2 + 150, 80, 20, '#fff', { sw: 5 });
+    }
+    ctx.restore();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; D.rr(ctx, m, m, VW - 2 * m, VH - 60, 14); ctx.stroke();
+    // caption box
+    ctx.fillStyle = '#fff6c8'; D.rr(ctx, m, VH - 42, VW - 2 * m, 32, 10); ctx.fill();
+    ctx.strokeStyle = '#1b2a4a'; ctx.lineWidth = 3; ctx.stroke();
+    D.text(ctx, STORY_PANELS[pi][1], VW / 2, VH - 26, 14, '#1b2a4a', { stroke: false });
+    D.text(ctx, 'TAP TO SKIP ▶', VW - 70 - SAFE_R, 30, 11, '#fff', { sw: 3 });
+    if (pt < 0.25) { ctx.fillStyle = 'rgba(27,42,74,' + (1 - pt / 0.25) + ')'; ctx.fillRect(0, 0, VW, VH); }
+  }
+  function drawCup(x, y, tilt) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
+    ctx.fillStyle = '#ff4a4a'; ctx.beginPath(); ctx.moveTo(-10, -30); ctx.lineTo(10, -30); ctx.lineTo(7, 0); ctx.lineTo(-7, 0); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(-9, -20, 17, 5);
+    ctx.strokeStyle = '#ffe14a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(3, -30); ctx.lineTo(8, -44); ctx.stroke();
+    ctx.restore();
+  }
+
   // ---------- transition cutscenes (tap to skip) ----------
   const ease = k => k < 0 ? 0 : k > 1 ? 1 : k * k * (3 - 2 * k);
-  function cutHero(x, y, t, o) { D.tubby(ctx, x, y, Object.assign({ face: 1, t, run: t * 16, speed: 1, ground: true, scale: 1.4, blink: (t % 3) < 0.1 }, o || {})); }
+  function cutHero(x, y, t, o) {
+    o = Object.assign({ face: 1, t, run: t * 16, speed: 1, ground: true, scale: 1.4, blink: (t % 3) < 0.1 }, o || {});
+    if (o.friends !== false && G.state === 'cutscene') friendsBefore(G.cut).forEach((k, i) => {
+      const dx = -(i + 1) * 44 * o.scale / 1.4 * o.face;
+      D.friend(ctx, k, x + dx, y + Math.sin(t * 8 + i) * 3, { t, face: o.face, run: t * 14, speed: 1, ground: !o.air, air: o.air, scale: o.scale * 0.95, alpha: o.alpha, glow: 0.8 });
+    });
+    D.tubby(ctx, x, y, o);
+  }
   function renderCutscene() {
-    const t = G.stateT, k = t / CUT_LEN, n = G.cut, TH = window.THEMES;
+    const t = G.stateT, n = G.cut, k = t / (n >= 5 ? 7 : CUT_LEN), TH = window.THEMES;
     let caption = '';
     ctx.save();
     if (n === 1) {          // 1 -> 2: climb the big tree into the clouds
@@ -1489,25 +1673,46 @@
         cutHero(VW / 2, ry - 52, t, { scale: 0.42, ground: true, speed: 0 });
       }
       if (Math.abs(k - 0.45) < 0.04) { ctx.fillStyle = 'rgba(255,255,255,' + (1 - Math.abs(k - 0.45) / 0.04) + ')'; ctx.fillRect(0, 0, VW, VH); }
-    } else {                // 5: rocket flies home to the victory screen
-      caption = 'Mission complete! Heading home...';
-      TH.space.background(ctx, k * 800, VW, VH, t);
-      const q = ease(k / 0.9);
-      const rx = -40 + q * (VW + 120), ry = VH * 0.7 - Math.sin(q * Math.PI * 0.9) * 140 - q * 60;
-      ctx.save(); ctx.translate(rx, ry); ctx.rotate(Math.PI / 2 - 0.4 + q * 0.3);
-      for (let i = 0; i < 12; i++) { ctx.fillStyle = 'rgba(255,' + (190 + i * 5) + ',120,' + (0.5 - i * 0.035) + ')'; D.circ(ctx, Math.sin(i * 2 + t * 9) * 6, 30 + i * 14, 10 - i * 0.6); ctx.fill(); }
-      D.rocket(ctx, 0, 0, t, 1); ctx.restore();
-      const ex = VW * 0.85, ey = 90;
-      const eg = ctx.createRadialGradient(ex - 10, ey - 10, 4, ex, ey, 46); eg.addColorStop(0, '#9fe0ff'); eg.addColorStop(0.7, '#2f7fe0'); eg.addColorStop(1, '#1a3f8a');
-      ctx.fillStyle = eg; D.circ(ctx, ex, ey, 30 + q * 20); ctx.fill();
+    } else {                // 5: through the portal and back onto the couch
+      if (k < 0.3) {
+        TH.space.background(ctx, 0, VW, VH, t);
+        const q = ease(k / 0.3);
+        D.portal(ctx, VW / 2, 300, t * 2);
+        const crew = ['tubby'].concat(FRIEND_KEYS);
+        crew.forEach((c, i) => {
+          const kk = Math.max(0, Math.min(1, q * 1.6 - i * 0.2)), sx = VW / 2 - 200 + i * 40 + kk * (200 - i * 40), sc = 1.2 * (1 - kk * 0.85);
+          if (kk >= 1) return;
+          ctx.save(); ctx.translate(sx, 240); ctx.rotate(kk * 6);
+          if (c === 'tubby') D.tubby(ctx, 0, 0, { t, scale: sc, air: true }); else D.friend(ctx, c, 0, 0, { t, scale: sc, air: true, glow: 1 });
+          ctx.restore();
+        });
+        if (k > 0.25) { ctx.fillStyle = 'rgba(255,255,255,' + ease((k - 0.25) / 0.05) + ')'; ctx.fillRect(0, 0, VW, VH); }
+      } else {
+        const q = (k - 0.3) / 0.7;
+        const room = D.livingRoom(ctx, VW, VH, t, { screen: q < 0.55 ? 'swirl' : 'game' });
+        const crew = ['tubby'].concat(FRIEND_KEYS);
+        crew.forEach((c, i) => {
+          const st = 0.05 + i * 0.12, kk = ease((q - st) / 0.25);
+          if (q < st) return;
+          const seatX = room.couchX - 105 + i * 70, seatY = room.seatY + 2;
+          const x = room.tvX + (seatX - room.tvX) * kk, y = room.tvY + 10 + (seatY - room.tvY - 10) * kk - Math.sin(kk * Math.PI) * 110;
+          const sc = 0.5 + kk * 0.9, done = kk >= 1;
+          const hop = done ? Math.abs(Math.sin(t * 6 + i)) * 10 : 0;
+          if (c === 'tubby') D.tubby(ctx, x, y - hop, { t, scale: sc, air: !done || hop > 2, ground: done, face: done ? 1 : -1, blink: (t % 3) < 0.1 });
+          else D.friend(ctx, c, x, y - hop, { t, scale: sc, air: !done || hop > 2, glow: done ? 0.6 : 1, face: done ? 1 : -1 });
+          if (!done && kk > 0) for (let j = 0; j < 4; j++) { ctx.fillStyle = 'rgba(255,255,200,.8)'; D.star(ctx, x + 20 + j * 12, y - 30 + j * 4, 4, t * 5 + j); ctx.fill(); }
+        });
+        if (q > 0.7) for (let i = 0; i < 30; i++) { ctx.fillStyle = ['#ff5fa0', '#ffe14a', '#8af05a', '#5ec8ff'][i % 4]; ctx.fillRect((i * 97 + t * 40) % VW, ((t - 4) * 120 + i * 37) % VH, 5, 3); }
+        if (q < 0.05) { ctx.fillStyle = 'rgba(255,255,255,' + (1 - q / 0.05) + ')'; ctx.fillRect(0, 0, VW, VH); }
+      }
     }
     ctx.restore();
     // letterbox + caption + skip hint
     ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, 0, VW, 26); ctx.fillRect(0, VH - 34, VW, 34);
-    D.text(ctx, caption, VW / 2, VH - 17, 16, '#fff', { sw: 4 });
+    D.text(ctx, STORY_BEATS[n - 1] || caption, VW / 2, VH - 17, 15, '#fff', { sw: 4 });
     D.text(ctx, 'TAP TO SKIP ▶', VW - 70 - SAFE_R, 13, 11, 'rgba(255,255,255,.85)', { sw: 3 });
     const nx = window.LEVELS[n];
-    D.text(ctx, nx ? 'NEXT: LEVEL ' + nx.id + ' - ' + nx.name.toUpperCase() : 'NEXT: VICTORY!', 14 + SAFE_L, 13, 11, '#ffde3a', { sw: 3, align: 'left' });
+    D.text(ctx, nx ? 'NEXT: LEVEL ' + nx.id + ' - ' + nx.name.toUpperCase() : 'HOME SWEET HOME!', 14 + SAFE_L, 13, 11, '#ffde3a', { sw: 3, align: 'left' });
     if (t < 0.3) { ctx.fillStyle = 'rgba(0,0,0,' + (1 - t / 0.3) + ')'; ctx.fillRect(0, 0, VW, VH); }
   }
 

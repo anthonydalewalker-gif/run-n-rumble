@@ -75,7 +75,7 @@
     },
     {
       id: 5, name: 'Star Station', subtitle: 'Low gravity space', theme: 'space', music: 'level5',
-      time: 300, length: 11000, exit: { x: 10750, kind: 'rocket' },
+      time: 300, length: 11000, exit: { x: 10750, kind: 'portal' },
       gravity: 0.45, jumpScale: 0.72,
       bugSkin: 'alien', birdSkin: 'ufo', rockSkin: 'meteor',
       ground: [[0, 900, 300], [1050, 1800, 290], [1960, 2700, 270], [2880, 3600, 300], [3780, 4500, 260], [4700, 5400, 290],
