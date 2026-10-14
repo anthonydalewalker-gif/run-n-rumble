@@ -277,8 +277,11 @@
     const wasSwim = P.swim;
     P.swim = inWater(P);
     if (P.swim && !wasSwim) {   // splash down
-      P.vy *= 0.35; P.jumping = false;
-      const wy = waterY(P.x); Sound.play('squish'); burst(P.x, wy, 12, 'bubble', '#e8fbff', 130);
+      // plunge: keep some momentum from the fall so higher drops sink deeper
+      P.vy = Math.min(Math.max(P.vy, 0) * 0.55 + 60, 380); P.jumping = false; P.popped = false;
+      const wy = waterY(P.x); Sound.play('squish'); Sound.play('boing'); W.shake = Math.max(W.shake, 2);
+      burst(P.x, wy, 14, 'bubble', '#e8fbff', 140);
+      for (let i = 0; i < 12; i++) W.parts.push({ x: P.x + rand(-10, 10), y: wy, vx: rand(-110, 110), vy: rand(-320, -140), life: 0, max: rand(0.5, 0.8), kind: 'spark', col: '#dff6ff', size: rand(2, 4), rot: 0, vr: 0 });
     }
     const speed = C.speed * (fast ? 1.55 : 1) * (P.swim ? 0.8 : 1);
     const dir = (Input.right ? 1 : 0) - (Input.left ? 1 : 0);
@@ -301,8 +304,19 @@
         P.onGround = false;
       }
       if (Input.jump && P.vy > -120) P.vy -= 260 * dt;     // hold to drift upward
-      P.vy = Math.min(P.vy + 380 * dt, 110);
-      P.vy *= (1 - 0.8 * dt);
+      const wy2 = waterY(P.x), open = wy2 > 200;   // open water between docks: buoyancy bobs you back out
+      if (open) {
+        const depth = P.y - P.h * 0.5 - wy2;
+        P.vy -= (depth > 0 ? 900 + depth * 8 : 0) * dt;
+        P.vy *= (1 - 1.6 * dt);
+        if (!P.popped && P.vy < 0 && P.y - P.h * 0.8 < wy2) {   // breaking the surface: pop out
+          P.popped = true; P.vy = -jumpVel() * 0.78; P.jumping = false; P.sx = 0.8; P.sy = 1.25;
+          Sound.play('jump'); burst(P.x, wy2, 10, 'bubble', '#e8fbff', 120);
+        }
+      } else {
+        P.vy = Math.min(P.vy + 380 * dt, 110);
+        P.vy *= (1 - 0.8 * dt);
+      }
       W.bubbleT -= dt; if (W.bubbleT < 0) { W.bubbleT = rand(0.3, 0.7); burst(P.x + P.face * 8, P.y - P.h + 6, 1, 'bubble', '#e8fbff', 20); }
     } else {
       if (P.jumpBuf > 0 && P.coyote > 0) {

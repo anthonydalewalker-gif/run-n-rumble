@@ -1,5 +1,5 @@
 // Offline cache for Run N Rumble. Bump VERSION when files change.
-const VERSION = 'rnr-v4';
+const VERSION = 'rnr-v5';
 const CORE = [
   './', './index.html', './manifest.webmanifest',
   './js/audio.js', './js/input.js', './js/draw.js', './js/art.js', './js/levels.js', './js/game.js',
