@@ -267,10 +267,57 @@
         if (bar === 7 && pos === 15) nz(c, out, t, 0.25, 0.4, 'highpass', 3000);   // crash into the loop
       }
     }
-    return { BPM, SD, STEPS, play };
+    return { BPM, SD, STEPS, play, lib: { hz, env, osc, marimba, chip, kick, nz } };
   })();
   window.RNRTitleSong = TitleSong;
   SONGS.title = { custom: TitleSong };
+
+
+  // ---------- Level 1 theme (composed by the user): "Running in the Sunshine" ----------
+  // Eighth-note grid at 150 BPM; each written group of 4 symbols = 4 eighths = 2 beats, so each phrase
+  // (4 groups) is 2 bars and the motif (2 phrases) is 4 bars, played twice over C - G/B - Am - F (one chord per bar)
+  // for an 8-bar loop. '.' holds the previous note. Second pass adds a sparkle octave layer + fuller drums.
+  const Level1Song = (function () {
+    const { hz, env, osc, chip, kick, nz } = TitleSong.lib;
+    const BPM = 150, SD = 60 / BPM / 2, STEPS = 64;
+    const N = { B4: 71, C5: 72, D5: 74, E5: 76, F5: 77, G5: 79, A5: 81, B5: 83, C6: 84 };
+    const GRID = ('C5 . E5 G5 C6 . B5 A5 G5 . E5 C5 D5 . . . ' +
+                  'F5 . A5 C6 B5 . A5 G5 E5 . G5 C6 D5 . B4 C5').trim().split(/\s+/);
+    const MEL = [];   // [step, midi, lengthSteps]
+    GRID.forEach((sym, i) => { if (sym === '.') { if (MEL.length) MEL[MEL.length - 1][2]++; } else MEL.push([i, N[sym], 1]); });
+    const CHORDS = [[60, 64, 67], [59, 62, 67], [57, 60, 64], [53, 57, 60]];   // C, G/B, Am, F
+    const BASS = [36, 43, 45, 41];                                              // C2, G2, A2, F2 (+ octave jumps)
+    function lead(c, out, n, t, dur, vol) {
+      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(5200, t); f.frequency.exponentialRampToValueAtTime(2200, t + dur); f.Q.value = 2; f.connect(out);
+      const g = c.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+      g.gain.setValueAtTime(vol * 0.75, t + Math.min(0.08, dur * 0.5)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); g.connect(f);
+      [['sawtooth', 0], ['square', 7]].forEach(([type, det]) => { const o = c.createOscillator(); o.type = type; o.frequency.value = hz(n); o.detune.value = det; o.connect(g); o.start(t); o.stop(t + dur + 0.03); });
+    }
+    function play(c, out, t, i) {
+      const bar = i >> 3, pos = i & 7, ch = bar & 3, second = bar >= 4;
+      const m = i % 32;
+      for (const [st, n, d] of MEL) if (st === m) {
+        lead(c, out, n, t, d * SD * 0.95, 0.16);
+        lead(c, out, n, t + SD * 1.5, d * SD * 0.6, 0.04);                 // dotted-eighth echo
+        if (second) chip(c, out, n + 12, t, 0.035, d * SD * 0.7, 6000);     // sparkle octave on the repeat
+      }
+      // offbeat chord stabs
+      if (pos % 2 === 1) CHORDS[ch].forEach(n => chip(c, out, n, t, 0.025, SD * 0.5, 2400));
+      // bouncy syncopated octave bass: low on 1, high on &1, low on &2, high on 3, low on &3, high on &4
+      const B = BASS[ch];
+      const pat = { 0: 0, 1: 12, 3: 0, 4: 12, 5: 0, 7: 12 };
+      if (pat[pos] !== undefined) { const d = SD * 0.85; osc(c, 'triangle', hz(B + pat[pos]), t, d, env(c, out, t, 0.5, d)); osc(c, 'square', hz(B + pat[pos]) * 2, t, d * 0.5, env(c, out, t, 0.05, d * 0.5)); }
+      // light drums
+      if (pos === 0 || pos === 4 || (second && pos === 5)) kick(c, out, t, 0.55);
+      if (pos === 2 || pos === 6) nz(c, out, t, 0.16, 0.12, 'bandpass', 1700);
+      nz(c, out, t, pos % 2 ? 0.03 : 0.05, 0.03, 'highpass', 8000);
+      if (second) nz(c, out, t + SD / 2, 0.025, 0.025, 'highpass', 9000);
+      if (bar === 7 && pos >= 6) nz(c, out, t + SD / 2, 0.12, 0.08, 'bandpass', 1900);    // little fill into the loop
+    }
+    return { BPM, SD, STEPS, play };
+  })();
+  window.RNRLevel1Song = Level1Song;
+  SONGS.level1 = { custom: Level1Song };
 
   let currentTrack = null, pendingTrack = null, trackOut = null, synthTimer = null, step = 0, nextTime = 0, playingFile = null;
   const midi = n => 440 * Math.pow(2, (n - 69) / 12);
