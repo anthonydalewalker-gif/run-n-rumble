@@ -179,11 +179,108 @@
            36,0,48,0, 36,0,48,0, 41,0,53,0, 41,0,53,0, 44,0,56,0, 43,0,55,0, 43,0,47,0, 36,0,0,0]
   };
 
-  let currentTrack = null, pendingTrack = null, synthTimer = null, step = 0, nextTime = 0, playingFile = null;
+
+  // ---------- Title theme (composed by the user) ----------
+  // Melody C5 E5 G5 A5 | G5 E5 C5 | F5 A5 C6 | B5 G5 D5 over C -> F -> G -> G7, rhythm quarter-eighth-eighth
+  // applied cyclically inside each bar (the phrase's last note rings to the end of the bar).
+  // 8-bar loop @144 BPM in 16th-note steps: bars 1-4 marimba + rolls + ticks, bars 5-8 add chiptune
+  // arpeggios, bass and drums with an opening filter, and bar 8 is a rising "countdown" roll back to the top.
+  const TitleSong = (function () {
+    const BPM = 144, SD = 60 / BPM / 4, STEPS = 128;
+    const PHR = [[72, 76, 79, 81], [79, 76, 72], [77, 81, 84], [83, 79, 74]];
+    const CH = [[60, 64, 67], [65, 69, 72], [67, 71, 74], [67, 71, 74, 77]];
+    const ROOT = [36, 41, 43, 43];
+    const RHY = [4, 2, 2];
+    const MEL = PHR.map(ph => {   // [startStep, note, lengthSteps]
+      const out = []; let pos = 0;
+      ph.forEach((n, k) => { const d = RHY[k % 3]; out.push([pos, n, d]); pos += d; });
+      out[out.length - 1][2] = 16 - out[out.length - 1][0];
+      return out;
+    });
+    const hz = n => 440 * Math.pow(2, (n - 69) / 12);
+    const noiseCache = new WeakMap();
+    function noise(c) {
+      let b = noiseCache.get(c);
+      if (!b) { b = c.createBuffer(1, c.sampleRate, c.sampleRate); const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; noiseCache.set(c, b); }
+      return b;
+    }
+    function env(c, out, t, vol, dur) {
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur); g.connect(out); return g;
+    }
+    function osc(c, type, f, t, dur, g) { const o = c.createOscillator(); o.type = type; o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + dur + 0.03); }
+    function marimba(c, out, n, t, vol, dur) {
+      dur = Math.min(dur || 0.5, 0.6);
+      const f = hz(n);
+      osc(c, 'sine', f, t, dur, env(c, out, t, vol, dur));
+      osc(c, 'sine', f * 3.93, t, 0.07, env(c, out, t, vol * 0.35, 0.07));   // woody upper partial
+      osc(c, 'triangle', f * 2, t, 0.03, env(c, out, t, vol * 0.25, 0.03));   // mallet click
+    }
+    function chip(c, out, n, t, vol, dur, cutoff) {
+      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff; f.Q.value = 4; f.connect(out);
+      osc(c, 'square', hz(n), t, dur, env(c, f, t, vol, dur));
+    }
+    function kick(c, out, t, vol) {
+      const o = c.createOscillator(), g = env(c, out, t, vol, 0.22);
+      o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.18); o.connect(g); o.start(t); o.stop(t + 0.25);
+    }
+    function nz(c, out, t, vol, dur, type, fr) {
+      const s = c.createBufferSource(); s.buffer = noise(c);
+      const f = c.createBiquadFilter(); f.type = type; f.frequency.value = fr; f.connect(env(c, out, t, vol, dur));
+      s.connect(f); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+    }
+    // schedule everything that happens on loop step i at time t
+    function play(c, out, t, i) {
+      const bar = i >> 4, pos = i & 15, ph = bar & 3, B = bar >= 4, chord = CH[ph];
+      const lift = B ? (bar - 4) / 3 : bar / 3;          // 0..1 build inside each half
+      // melody
+      for (const [st, n, d] of MEL[ph]) if (st === pos) {
+        marimba(c, out, n, t, 0.5, d * SD * 1.6);
+        if (B) chip(c, out, n, t, 0.11, d * SD * 0.9, 2500 + lift * 3000);
+      }
+      // ascending marimba rolls through the chord tones
+      const tones = chord.concat(chord.map(x => x + 12), chord.map(x => x + 24));
+      if (!B && pos >= 8) marimba(c, out, tones[(pos - 8) % tones.length] - 12, t, 0.12 + lift * 0.08, 0.25);
+      if (B && bar < 7 && (pos >= 8 || bar === 6)) marimba(c, out, tones[pos % tones.length] - 12, t, 0.14 + lift * 0.06, 0.2);
+      if (bar === 7) {   // countdown build: 32nd-note roll climbing two octaves + snare roll crescendo
+        for (let h = 0; h < 2; h++) { const k = pos * 2 + h; marimba(c, out, tones[Math.min(tones.length - 1, Math.floor(k / 32 * tones.length))] - 12 + (k % 2) * 12, t + h * SD / 2, 0.1 + 0.2 * k / 32, 0.15); }
+        if (pos >= 8) nz(c, out, t, 0.08 + 0.2 * (pos - 8) / 8, 0.08, 'bandpass', 1800);
+        if (pos >= 12 && pos % 2 === 0) chip(c, out, 84 + (pos - 12) * 2, t, 0.08, SD * 1.8, 6000);   // 3.. 2.. 1..
+      }
+      // chiptune arpeggios (enter at bar 4 as a preview, full in the second half)
+      if (B || bar === 3) {
+        const arp = chord.concat([chord[0] + 12]);
+        const n = arp[pos % arp.length] + 12;
+        chip(c, out, n, t, (B ? 0.05 + lift * 0.04 : 0.035), SD * 0.8, (B ? 900 + lift * 4500 : 700 + pos * 60));
+      }
+      // bass
+      if (pos === 0) marimba(c, out, ROOT[ph] + 12, t, 0.35, 0.5);
+      if (B && pos % 4 === 0) osc(c, 'triangle', hz(ROOT[ph] + (pos === 8 ? 7 : 0)), t, SD * 3, env(c, out, t, 0.45, SD * 3.5));
+      if (B && pos % 4 === 2) osc(c, 'triangle', hz(ROOT[ph] + 12), t, SD * 1.5, env(c, out, t, 0.3, SD * 2));
+      // drums / ticks
+      if (!B) { if (pos % 4 === 0 || (bar >= 2 && pos % 2 === 0)) nz(c, out, t, 0.04 + lift * 0.03, 0.03, 'highpass', 7000); if (pos === 0 && bar >= 2) kick(c, out, t, 0.5); }
+      else {
+        if (pos % 4 === 0) kick(c, out, t, 0.7);
+        if (pos % 2 === 0) nz(c, out, t, 0.06, 0.035, 'highpass', 7000);
+        if ((pos === 4 || pos === 12) && bar < 7) nz(c, out, t, 0.18, 0.12, 'bandpass', 1500);
+        if (bar === 7 && pos === 15) nz(c, out, t, 0.25, 0.4, 'highpass', 3000);   // crash into the loop
+      }
+    }
+    return { BPM, SD, STEPS, play };
+  })();
+  window.RNRTitleSong = TitleSong;
+  SONGS.title = { custom: TitleSong };
+
+  let currentTrack = null, pendingTrack = null, trackOut = null, synthTimer = null, step = 0, nextTime = 0, playingFile = null;
   const midi = n => 440 * Math.pow(2, (n - 69) / 12);
 
   function scheduleSynth() {
     const song = SONGS[currentTrack]; if (!song || !ctx) return;
+    if (song.custom) {
+      while (nextTime < ctx.currentTime + 0.15) { song.custom.play(ctx, trackOut, nextTime, step % song.custom.STEPS); nextTime += song.custom.SD; step++; }
+      return;
+    }
     const stepDur = 60 / song.bpm / 2;
     while (nextTime < ctx.currentTime + 0.15) {
       const i = step % song.lead.length;
@@ -200,14 +297,14 @@
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(musicBus); o.start(t); o.stop(t + dur + 0.02);
+    o.connect(g); g.connect(trackOut || musicBus); o.start(t); o.stop(t + dur + 0.02);
   }
   function hat(t, vol) {
     const s = ctx.createBufferSource(); s.buffer = noiseBuf;
     const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7000;
     const g = ctx.createGain();
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-    s.connect(f); f.connect(g); g.connect(musicBus); s.start(t, Math.random()); s.stop(t + 0.05);
+    s.connect(f); f.connect(g); g.connect(trackOut || musicBus); s.start(t, Math.random()); s.stop(t + 0.05);
   }
   function stopSynth() { if (synthTimer) { clearInterval(synthTimer); synthTimer = null; } }
   function playFile(name) {
@@ -225,11 +322,14 @@
     currentTrack = name;
     if (playFile(name)) return;
     step = 0; nextTime = ctx.currentTime + 0.05;
+    trackOut = ctx.createGain(); trackOut.connect(musicBus);   // per-track gain so tracks crossfade
+    trackOut.gain.setValueAtTime(0.0001, ctx.currentTime); trackOut.gain.exponentialRampToValueAtTime(1, ctx.currentTime + 0.4);
     synthTimer = setInterval(scheduleSynth, 30);
     scheduleSynth();
   }
   function stopMusic() {
     stopSynth();
+    if (trackOut && ctx) { const old = trackOut; old.gain.cancelScheduledValues(ctx.currentTime); old.gain.setTargetAtTime(0, ctx.currentTime, 0.12); setTimeout(() => { try { old.disconnect(); } catch (e) {} }, 1200); trackOut = null; }
     if (playingFile) { playingFile.pause(); playingFile = null; }
     currentTrack = null;
   }
