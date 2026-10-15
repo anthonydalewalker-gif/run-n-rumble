@@ -835,6 +835,7 @@
         if (act === 'story') { Sound.play('click'); tryFullscreen(); G.storyThen = 'title'; setState('story'); }
         break;
       case 'story':
+        if (G.stateT < 0.05) G.storyLastT = undefined;
         if (G.stateT > STORY_LEN || (G.stateT > 0.4 && anyTap())) {
           save.storySeen = true; persist();
           if (G.storyThen === 'play') startRunoff(); else setState('title');
@@ -1462,113 +1463,200 @@
     }
   }
 
-  // ---------- story intro (comic panels, tap to skip) ----------
-  const STORY_LEN = 13;
-  const STORY_PANELS = [
+  // ---------- story intro: one continuous animated scene (tap to skip) ----------
+  const STORY_LEN = 19;
+  const STORY_CAPS = [
     [0, 'One lazy afternoon, Tubby Dash and his friends were gaming on the couch...'],
-    [3, '...until somebody bumped the soda! SPLASH!'],
-    [5.5, 'ZZZAP! The TV sparked and fizzed...'],
-    [7.5, '...and sucked all four of them into the game!'],
-    [10, 'They got scattered! Tubby must rescue his friends and find the way home!']
+    [3, 'Squib grabbed a fizzy soda... and set it right on top of the game console!'],
+    [6.8, 'The game got SO exciting that everyone started bouncing...'],
+    [8.6, 'Uh oh... the soda tipped over and spilled into the console!'],
+    [10, 'ZZZAP! Sparks raced up the cable to the screen!'],
+    [11.6, 'The screen swirled... and sucked all four of them into the game!'],
+    [14.6, 'They got scattered! Tubby must rescue his friends and find the way home!']
   ];
-  function couchCrew(room, t, o) {
-    o = o || {};
-    const crew = ['pipple', 'tubby', 'lunker', 'squib'];
-    crew.forEach((c, i) => {
-      const x = room.couchX - 105 + i * 70, y = room.seatY + 2;
-      const lean = o.lean ? Math.sin(t * 9 + i) * 3 : 0;
-      ctx.save(); ctx.translate(x, y); ctx.rotate((o.shock ? Math.sin(t * 30 + i) * 0.06 : 0) + lean * 0.02);
-      if (c === 'tubby') D.tubby(ctx, 0, 0, { t, scale: 1.3, ground: true, hurt: o.shock, blink: (t % 3) < 0.1 });
-      else D.friend(ctx, c, 0, 0, { t, scale: 1.3, glow: 0, blink: ((t + i) % 3.3) < 0.1 });
-      // controller
-      ctx.fillStyle = '#2a2a34'; D.rr(ctx, 4, -24 - (c === 'lunker' ? 10 : 0), 18, 9, 4); ctx.fill();
-      ctx.fillStyle = '#ff4a4a'; D.circ(ctx, 18, -20 - (c === 'lunker' ? 10 : 0), 1.6); ctx.fill();
-      ctx.restore();
-    });
+  const STORY_SFX = [[5.15, 'candown'], [5.3, 'fizz'], [7.2, 'boing'], [7.8, 'boing'], [8.3, 'bonk'], [8.75, 'spill'], [10.05, 'zap'], [10.6, 'crackle'], [11.1, 'zap'],
+    [11.7, 'whoosh'], [12.0, 'jump'], [12.5, 'jump'], [13.0, 'jump'], [13.5, 'jump'], [14.6, 'poof'], [15.5, 'whistle'], [16.0, 'thud']];
+  const CREW = ['pipple', 'tubby', 'lunker', 'squib'];
+  const sm = x => x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x);
+  function camAt(t, room) {
+    const K = [[0, 1, VW / 2, VH / 2], [3, 1.08, VW * 0.55, 205], [4.6, 1.4, room.tvX - 60, 215], [5.8, 1.4, room.tvX - 60, 215], [6.8, 1.1, VW * 0.5, 205],
+      [8.4, 1.6, room.tvX, 220], [9.9, 1.6, room.tvX, 215], [10.6, 1.35, room.tvX - 10, 175], [11.6, 1.0, VW / 2, VH / 2], [15, 1, VW / 2, VH / 2]];
+    let i = 0; while (i < K.length - 2 && t > K[i + 1][0]) i++;
+    const a = K[i], b = K[i + 1], k = sm((t - a[0]) / (b[0] - a[0]));
+    const z = a[1] + (b[1] - a[1]) * k, hw = VW / (2 * z), hh = VH / (2 * z);
+    const fx = Math.max(hw, Math.min(VW - hw, a[2] + (b[2] - a[2]) * k)), fy = Math.max(hh, Math.min(VH - hh, a[3] + (b[3] - a[3]) * k));
+    return [z, fx, fy];
+  }
+  function cablePt(room, k) {   // bezier from the console back up to the monitor
+    const x0 = room.tvX + 22, y0 = 214, x3 = room.tvX + 58, y3 = room.tvY + 50;
+    const x1 = room.tvX + 80, y1 = 250, x2 = room.tvX + 95, y2 = room.tvY + 80;
+    const u = 1 - k;
+    return [u * u * u * x0 + 3 * u * u * k * x1 + 3 * u * k * k * x2 + k * k * k * x3, u * u * u * y0 + 3 * u * u * k * y1 + 3 * u * k * k * y2 + k * k * k * y3];
+  }
+  function drawConsole(room, t, shake) {
+    const x = room.tvX, y = 220 + 0;
+    ctx.save(); ctx.translate(Math.sin(t * 45) * shake, 0);
+    ctx.fillStyle = '#2a2a3a'; D.rr(ctx, x - 30, y - 14, 60, 14, 4); ctx.fill();
+    ctx.fillStyle = '#3e3e52'; D.rr(ctx, x - 30, y - 14, 60, 5, 3); ctx.fill();
+    ctx.fillStyle = (Math.sin(t * 4) > 0) ? '#5fff7a' : '#2a8a3a'; D.circ(ctx, x - 22, y - 6, 1.8); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.fillRect(x + 6, y - 8, 6, 4); ctx.fillRect(x + 15, y - 8, 6, 4);   // ports
+    ctx.restore();
+    // controller cables to the couch + video cable to the monitor + PC tower
+    ctx.strokeStyle = '#1a1a24'; ctx.lineWidth = 2.5; ctx.beginPath();
+    let p = cablePt(room, 0); ctx.moveTo(p[0], p[1]); for (let k = 0.05; k <= 1.001; k += 0.05) { p = cablePt(room, k); ctx.lineTo(p[0], p[1]); } ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(30,30,40,.7)';
+    ctx.beginPath(); ctx.moveTo(x - 28, y - 4); ctx.quadraticCurveTo(x - 90, 300, room.couchX + 110, 268); ctx.stroke();
+    ctx.fillStyle = '#d8dce6'; D.rr(ctx, x + 92, 228, 34, 66, 4); ctx.fill(); ctx.strokeStyle = '#8a90a2'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#5ec8ff'; D.circ(ctx, x + 109, 240, 2.5); ctx.fill();
+    ctx.strokeStyle = '#1a1a24'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 92, 262); ctx.quadraticCurveTo(x + 50, 280, x + 26, y - 6); ctx.stroke();
+  }
+  function drawSoda(x, y, tilt, fizzK, t) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
+    const g = ctx.createLinearGradient(-6, 0, 6, 0); g.addColorStop(0, '#c41e2a'); g.addColorStop(0.5, '#ff5a5a'); g.addColorStop(1, '#a01020');
+    ctx.fillStyle = g; D.rr(ctx, -6, -18, 12, 18, 3); ctx.fill();
+    ctx.fillStyle = '#d8dce6'; ctx.fillRect(-6, -19, 12, 3); ctx.fillStyle = '#fff'; ctx.fillRect(-6, -11, 12, 3);
+    ctx.restore();
+    if (fizzK > 0) for (let i = 0; i < 6; i++) {
+      const ph = (t * 1.5 + i / 6) % 1;
+      ctx.fillStyle = 'rgba(255,255,255,' + (1 - ph) * fizzK + ')'; D.circ(ctx, x + Math.sin(i * 7 + t * 6) * 4, y - 20 - ph * 18, 1.4); ctx.fill();
+    }
   }
   function renderStory() {
-    const t = G.stateT, ease = x => x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x);
-    let pi = 0; STORY_PANELS.forEach((p, i) => { if (t >= p[0]) pi = i; });
-    const pt = t - STORY_PANELS[pi][0];
+    const t = G.stateT;
+    // synced sound effects
+    const last = G.storyLastT === undefined || G.storyLastT > t ? -1 : G.storyLastT;
+    for (const [et, name] of STORY_SFX) if (et > last && et <= t) Sound.play(name);
+    G.storyLastT = t;
+    let cap = STORY_CAPS[0][1]; for (const c of STORY_CAPS) if (t >= c[0]) cap = c[1];
     ctx.fillStyle = '#1b2a4a'; ctx.fillRect(0, 0, VW, VH);
-    // comic panel frame (slight zoom-in per panel)
-    const m = 14, z = 1 + Math.min(pt, 3) * 0.015;
-    ctx.save(); D.rr(ctx, m, m, VW - 2 * m, VH - 60, 14); ctx.clip();
-    ctx.translate(VW / 2, VH / 2); ctx.scale(z, z); ctx.translate(-VW / 2, -VH / 2);
-    if (pi <= 3) {
-      const screen = pi === 0 || pi === 1 ? 'game' : pi === 2 ? 'static' : 'swirl';
+    const m = 10;
+    ctx.save(); D.rr(ctx, m, m, VW - 2 * m, VH - 56, 14); ctx.clip();
+    if (t < 14.6) {
+      const room0 = { tvX: VW * 0.78, tvY: 150, couchX: VW * 0.33, seatY: 252 };
+      const [z, fx, fy] = camAt(t, room0);
+      const shakeAll = (t > 10 && t < 11.6) ? 3 : 0;
+      ctx.translate(VW / 2 + (shakeAll ? rand(-shakeAll, shakeAll) : 0), VH / 2); ctx.scale(z, z); ctx.translate(-fx, -fy);
+      const screen = t < 10.2 ? 'game' : t < 11.6 ? 'static' : 'swirl';
       const room = D.livingRoom(ctx, VW, VH, G.t, { screen });
-      if (pi < 3) couchCrew(room, G.t, { lean: pi === 0, shock: pi === 2 });
-      // soda cup on the armrest -> tips -> splash on the TV
-      const cupX = room.couchX + 152, cupY = 196;
-      if (pi === 0) { drawCup(cupX, cupY, 0); }
-      if (pi === 1) {
-        const tip = ease(pt / 0.6);
-        drawCup(cupX + tip * 20, cupY, tip * 1.9);
-        const fl = ease((pt - 0.4) / 1.2);
-        if (fl > 0) {
-          ctx.strokeStyle = '#8a4a1a'; ctx.lineWidth = 7; ctx.lineCap = 'round';
-          ctx.beginPath(); ctx.moveTo(cupX + 26, cupY - 8);
-          ctx.quadraticCurveTo((cupX + room.tvX) / 2, cupY - 120, cupX + 26 + (room.tvX - 40 - cupX - 26) * fl, cupY - 8 + (room.tvY - cupY + 8) * fl); ctx.stroke();
-          for (let i = 0; i < 8; i++) { ctx.fillStyle = 'rgba(160,90,40,.85)'; D.circ(ctx, room.tvX - 40 + Math.sin(i * 3) * 30 * fl, room.tvY + i * 6 * fl, 4); ctx.fill(); }
-        }
-        if (pt > 1.6) D.text(ctx, 'SPLASH!', room.tvX, room.tvY - 70, 28, '#5ec8ff', { sw: 6 });
-      }
-      if (pi === 2) {
-        drawCup(cupX + 20, cupY + 30, 1.9);
-        for (let i = 0; i < 7; i++) {
-          const a = i / 7 * Math.PI * 2 + G.t * 3, r = 70 + Math.sin(G.t * 20 + i) * 15;
-          ctx.strokeStyle = i % 2 ? '#ffe14a' : '#fff'; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.moveTo(room.tvX + Math.cos(a) * 60, room.tvY + Math.sin(a) * 45);
-          ctx.lineTo(room.tvX + Math.cos(a + 0.2) * (r + 10), room.tvY + Math.sin(a - 0.2) * r); ctx.lineTo(room.tvX + Math.cos(a) * (r + 30), room.tvY + Math.sin(a) * (r + 15)); ctx.stroke();
-        }
-        if (Math.sin(G.t * 40) > 0.6) { ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(0, 0, VW, VH); }
-        D.text(ctx, 'ZZZAP!', room.tvX, room.tvY - 76, 30, '#ffe14a', { sw: 6 });
-      }
-      if (pi === 3) {
-        // swirl pulls everyone (and the cup) into the TV
-        const crew = ['pipple', 'tubby', 'lunker', 'squib'];
-        crew.forEach((c, i) => {
-          const kk = ease((pt - i * 0.25) / 1.6);
-          const sx = room.couchX - 105 + i * 70, sy = room.seatY + 2;
-          const ang = kk * 8 + i;
-          const x = sx + (room.tvX - sx) * kk + Math.cos(ang) * 40 * (1 - kk) * kk * 2;
-          const y = sy + (room.tvY + 10 - sy) * kk + Math.sin(ang) * 30 * (1 - kk) * kk * 2 - Math.sin(kk * Math.PI) * 50;
-          const sc = 1.3 * (1 - kk * 0.9);
-          if (kk >= 1) return;
-          ctx.save(); ctx.translate(x, y); ctx.rotate(kk * 10);
-          if (c === 'tubby') D.tubby(ctx, 0, 0, { t: G.t, scale: sc, air: true, hurt: true }); else D.friend(ctx, c, 0, 0, { t: G.t, scale: sc, air: true, glow: 0.8 });
+      const consShake = t > 6.8 && t < 8.7 ? 1.5 + (t - 6.8) : 0;
+      drawConsole(room, G.t, consShake);
+      // soda states: carried (3-5.15), on console (5.15-8.6 wobbling), tipping/spilled
+      const cx = room.tvX - 10, cy = 206;
+      // Squib's walk: leaves seat 3.0, reaches console 4.6, places 5.15, back on couch by 6.6
+      const seat = i => [room.couchX - 105 + i * 70, room.seatY];
+      let sqX, sqY, sqFace = 1, sqAir = false, handUp = 0;
+      const [s3x, s3y] = seat(3), floorY = 300, standX = room.tvX - 46;
+      if (t < 3 || t > 6.6) { sqX = s3x; sqY = s3y; }
+      else if (t < 3.4) { const k = sm((t - 3) / 0.4); sqX = s3x + k * 30; sqY = s3y + (floorY - s3y) * k - Math.sin(k * Math.PI) * 20; sqAir = true; }
+      else if (t < 4.6) { const k = (t - 3.4) / 1.2; sqX = s3x + 30 + (standX - s3x - 30) * k; sqY = floorY - Math.abs(Math.sin(k * 14)) * 4; }
+      else if (t < 5.6) { sqX = standX; sqY = floorY - sm((t - 4.6) / 0.3) * 16; handUp = sm((t - 4.6) / 0.4) * (1 - sm((t - 5.3) / 0.3)); sqAir = true; }
+      else { const k = sm((t - 5.6) / 1.0); sqX = standX + (s3x - standX) * k; sqY = floorY + (s3y - floorY) * k - Math.sin(k * Math.PI) * 40; sqFace = -1; sqAir = k < 1; }
+      // crew on the couch
+      const excited = t > 6.8 && t < 10 ? 1 : 0, shocked = t > 10 && t < 11.6;
+      const pulled = i => t < 11.6 ? 0 : sm((t - 11.8 - i * 0.55) / 1.1);
+      CREW.forEach((c, i) => {
+        if (c === 'squib' && t > 3 && t < 6.6) return;
+        const k = pulled(i); if (k >= 1) return;
+        let [x, y] = seat(i);
+        const bounce = excited ? Math.abs(Math.sin(G.t * 9 + i * 1.7)) * 12 : Math.abs(Math.sin(G.t * (3 + i) + i)) * 2.5;
+        y -= shocked ? 0 : bounce;
+        let sx = 1, sy = 1, rot = shocked ? Math.sin(G.t * 40 + i) * 0.05 : 0;
+        const tx = room.tvX, ty = room.tvY;
+        if (k > 0) {
+          const ang = Math.atan2(ty - y, tx - x);
+          const px = x + (tx - x) * k, py = y + (ty - y) * k - Math.sin(k * Math.PI) * 30;
+          const sc = 1 - 0.85 * k;
+          ctx.save(); ctx.translate(px, py); ctx.rotate(ang); ctx.scale((1 + 1.4 * k) * sc, (1 - 0.4 * k) * sc); ctx.rotate(-ang + k * 6);
+          if (c === 'tubby') D.tubby(ctx, 0, 0, { t: G.t, scale: 1.3, air: true, hurt: true }); else D.friend(ctx, c, 0, 0, { t: G.t, scale: 1.3, air: true, glow: 1 });
           ctx.restore();
-        });
-        ctx.strokeStyle = 'rgba(200,160,255,.6)'; ctx.lineWidth = 3;
-        for (let r = 0; r < 4; r++) { ctx.beginPath(); ctx.arc(room.tvX, room.tvY, 90 + r * 40 - (G.t * 80 % 40), G.t * 4 + r, G.t * 4 + r + 2); ctx.stroke(); }
-        D.text(ctx, 'WHOOOSH!', room.couchX, 90, 28, '#b47aff', { sw: 6 });
+          return;
+        }
+        ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+        const air = bounce > 4;
+        if (c === 'tubby') D.tubby(ctx, 0, 0, { t: G.t, scale: 1.3, ground: !air, air, hurt: shocked, blink: !shocked && (G.t % 3) < 0.1 });
+        else D.friend(ctx, c, 0, 0, { t: G.t, scale: 1.3, ground: !air, air, glow: excited ? 0.4 : 0, blink: !shocked && ((G.t + i) % 3.3) < 0.1 });
+        // controller in hand
+        const hy = c === 'lunker' ? -40 : -26;
+        ctx.fillStyle = '#2a2a34'; D.rr(ctx, 6, hy, 18, 9, 4); ctx.fill(); ctx.fillStyle = '#ff4a4a'; D.circ(ctx, 20, hy + 4, 1.6); ctx.fill();
+        ctx.restore();
+        if (shocked) D.text(ctx, '!', x + 6, y - (c === 'lunker' ? 100 : 72), 20, '#ff3a3a', { sw: 4 });
+        if (excited && Math.sin(G.t * 9 + i * 1.7) > 0.9) D.text(ctx, '♪', x + 22, y - 70, 14, '#fff', { sw: 3 });
+      });
+      if (t < 11.6 || pulled(3) < 1) D.couchFront(ctx, room);
+      // Squib walking with the soda
+      if (t >= 3 && t <= 6.6) {
+        const sp = (t > 3.4 && t < 4.6) || (t > 5.6) ? 1 : 0;
+        D.friend(ctx, 'squib', sqX, sqY, { t: G.t, scale: 1.3, face: sqFace, run: G.t * 14, speed: sp, ground: !sqAir, air: sqAir, glow: 0.2 });
+        if (t < 5.15) {   // can in Squib's raised hand, then set down on the console
+          const hx = sqX + 22, hy = sqY - 30 - handUp * 26;
+          const k = sm((t - 4.7) / 0.45);
+          drawSoda(hx + (cx - hx) * k, hy + (cy - hy) * k, 0, 0, G.t);
+        }
       }
+      // soda on the console: wobble, tip, spill
+      if (t >= 5.15) {
+        const wob = t > 6.8 ? Math.sin(G.t * 30) * Math.min(0.35, (t - 6.8) * 0.2) : 0;
+        const tip = sm((t - 8.5) / 0.35) * 1.75;
+        const sx = cx + Math.sin(G.t * 45) * consShake + tip * 6;
+        drawSoda(sx, cy - (t > 5.15 && t < 5.25 ? 2 : 0), wob + tip, t < 8.6 ? 1 : 0, G.t);
+        if (t > 8.6) {   // liquid flows over the console and drips into the ports/cable
+          const fl = sm((t - 8.6) / 1.2);
+          ctx.fillStyle = 'rgba(150,80,30,.9)';
+          ctx.beginPath(); ctx.ellipse(cx + 10 + fl * 10, 206, 6 + fl * 18, 2 + fl * 1.5, 0, 0, Math.PI * 2); ctx.fill();
+          for (let i = 0; i < 5; i++) {
+            const dx = cx + 4 + i * 8, len = fl * (10 + (i % 3) * 8);
+            ctx.fillRect(dx, 206, 2.5, len);
+            const ph = (G.t * 2 + i * 0.3) % 1; D.circ(ctx, dx + 1, 206 + len + ph * 20, 2); ctx.fill();
+          }
+          if (t > 9.4) { const p = cablePt(room, 0); ctx.fillStyle = 'rgba(150,80,30,.85)'; D.circ(ctx, p[0], p[1] + 2, 4 * fl); ctx.fill(); }
+        }
+      }
+      // sparks race along the cable to the monitor
+      if (t > 9.95 && t < 11.8) {
+        for (let j = 0; j < 3; j++) {
+          const k = ((t - 9.95) * 1.4 + j * 0.33) % 1, p = cablePt(room, k);
+          ctx.fillStyle = '#fff6a0'; D.star(ctx, p[0], p[1], 6 + Math.sin(G.t * 40 + j) * 2, G.t * 10); ctx.fill();
+          ctx.strokeStyle = '#ffe14a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p[0], p[1]);
+          ctx.lineTo(p[0] + rand(-10, 10), p[1] + rand(-10, 10)); ctx.lineTo(p[0] + rand(-12, 12), p[1] + rand(-12, 12)); ctx.stroke();
+        }
+        if (Math.sin(G.t * 37) > 0.7) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(room.tvX - 80, room.tvY - 60, 160, 130); }
+        D.text(ctx, 'ZZZAP!', room.tvX - 10, room.tvY - 72, 22, '#ffe14a', { sw: 5 });
+      }
+      if (t > 11.6) {
+        ctx.strokeStyle = 'rgba(200,160,255,.6)'; ctx.lineWidth = 3;
+        for (let r = 0; r < 5; r++) { ctx.beginPath(); ctx.arc(room.tvX, room.tvY, 80 + r * 45 - (G.t * 90 % 45), G.t * 4 + r, G.t * 4 + r + 2); ctx.stroke(); }
+        D.text(ctx, 'WHOOOSH!', room.couchX + 40, 80, 28, '#b47aff', { sw: 6 });
+      }
+      if (t > 14.1) { ctx.fillStyle = 'rgba(255,255,255,' + sm((t - 14.1) / 0.5) + ')'; ctx.fillRect(-VW, -VH, VW * 3, VH * 3); }
     } else {
-      // tumbling into the game world and scattering
-      window.THEMES.hills.background(ctx, pt * 40, VW, VH, G.t);
+      // tumbling into Green Hills and scattering (slow so everyone is visible)
+      const pt = t - 14.6;
+      window.THEMES.hills.background(ctx, pt * 20, VW, VH, G.t);
       ctx.fillStyle = '#5fbf3a'; ctx.fillRect(0, 300, VW, VH);
-      const dirs = [[0.2, -1.2], [-0.2, 0], [1.4, -0.4], [0.9, 1.2]];   // pipple up to the clouds, tubby lands, lunker off right, squib down
-      ['pipple', 'tubby', 'lunker', 'squib'].forEach((c, i) => {
-        const kk = Math.min(1, pt / 1.6);
-        let x = VW / 2 + (i - 1.5) * 20, y = -40 + kk * 260;
-        if (kk >= 0.6) { const q = (kk - 0.6) / 0.4; x += dirs[i][0] * q * VW * 0.5; y += dirs[i][1] * q * 160; }
-        if (c === 'tubby') { y = Math.min(300, -40 + Math.min(1, pt / 1.3) * 340); x = VW / 2 - 20; }
-        ctx.save(); ctx.translate(x, y); if (c !== 'tubby' || y < 300) ctx.rotate(pt * 6 + i);
-        if (c === 'tubby') D.tubby(ctx, 0, 0, { t: G.t, scale: 1.4, air: y < 300, ground: y >= 300, hurt: y < 300 });
+      const dirs = [[-0.75, -0.55], [0, 0], [0.85, -1.05], [0.4, 0.2]];
+      CREW.forEach((c, i) => {
+        const fall = sm(pt / 1.4);
+        let x = VW / 2 + (i - 1.5) * 50, y = -60 + fall * 230;
+        const q = sm((pt - 1.2) / 3.0);
+        x += dirs[i][0] * q * VW * 0.42; y += dirs[i][1] * q * 150;
+        let rot = pt * 3 + i;
+        if (c === 'tubby') { x = VW / 2 - 40; y = Math.min(300, -60 + sm(pt / 1.5) * 360); rot = y < 300 ? pt * 5 : 0; }
+        ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+        if (c === 'tubby') D.tubby(ctx, 0, 0, { t: G.t, scale: 1.4, air: y < 300, ground: y >= 300, hurt: y < 300, face: Math.sin(G.t * 2) > 0 ? 1 : -1 });
         else D.friend(ctx, c, 0, 0, { t: G.t, scale: 1.2, air: true, glow: 1 });
         ctx.restore();
+        if (c !== 'tubby' && pt > 1.5 && pt < 4.2) D.text(ctx, D.FRIENDS[c].name + '!', x, y - 50, 11, '#fff', { sw: 3 });
       });
-      if (pt > 1.4) D.text(ctx, 'HELP, TUBBY!', VW / 2 + 150, 80, 20, '#fff', { sw: 5 });
+      if (pt > 1.8) D.text(ctx, 'HELP, TUBBY!', VW / 2 + 150, 74, 22, '#fff', { sw: 5 });
+      if (pt < 0.4) { ctx.fillStyle = 'rgba(255,255,255,' + (1 - pt / 0.4) + ')'; ctx.fillRect(0, 0, VW, VH); }
     }
     ctx.restore();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; D.rr(ctx, m, m, VW - 2 * m, VH - 60, 14); ctx.stroke();
-    // caption box
-    ctx.fillStyle = '#fff6c8'; D.rr(ctx, m, VH - 42, VW - 2 * m, 32, 10); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; D.rr(ctx, m, m, VW - 2 * m, VH - 56, 14); ctx.stroke();
+    ctx.fillStyle = '#fff6c8'; D.rr(ctx, m, VH - 40, VW - 2 * m, 30, 10); ctx.fill();
     ctx.strokeStyle = '#1b2a4a'; ctx.lineWidth = 3; ctx.stroke();
-    D.text(ctx, STORY_PANELS[pi][1], VW / 2, VH - 26, 14, '#1b2a4a', { stroke: false });
-    D.text(ctx, 'TAP TO SKIP ▶', VW - 70 - SAFE_R, 30, 11, '#fff', { sw: 3 });
-    if (pt < 0.25) { ctx.fillStyle = 'rgba(27,42,74,' + (1 - pt / 0.25) + ')'; ctx.fillRect(0, 0, VW, VH); }
+    D.text(ctx, cap, VW / 2, VH - 25, 13.5, '#1b2a4a', { stroke: false });
+    D.text(ctx, 'TAP TO SKIP ▶', VW - 70 - SAFE_R, 26, 11, '#fff', { sw: 3 });
+    if (t < 0.3) { ctx.fillStyle = 'rgba(27,42,74,' + (1 - t / 0.3) + ')'; ctx.fillRect(0, 0, VW, VH); }
   }
   function drawCup(x, y, tilt) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
@@ -1702,6 +1790,8 @@
           else D.friend(ctx, c, x, y - hop, { t, scale: sc, air: !done || hop > 2, glow: done ? 0.6 : 1, face: done ? 1 : -1 });
           if (!done && kk > 0) for (let j = 0; j < 4; j++) { ctx.fillStyle = 'rgba(255,255,200,.8)'; D.star(ctx, x + 20 + j * 12, y - 30 + j * 4, 4, t * 5 + j); ctx.fill(); }
         });
+        D.couchFront(ctx, room);
+        crew.forEach((c, i) => { const st = 0.05 + i * 0.12; if (ease((q - st) / 0.25) < 1) return; });
         if (q > 0.7) for (let i = 0; i < 30; i++) { ctx.fillStyle = ['#ff5fa0', '#ffe14a', '#8af05a', '#5ec8ff'][i % 4]; ctx.fillRect((i * 97 + t * 40) % VW, ((t - 4) * 120 + i * 37) % VH, 5, 3); }
         if (q < 0.05) { ctx.fillStyle = 'rgba(255,255,255,' + (1 - q / 0.05) + ')'; ctx.fillRect(0, 0, VW, VH); }
       }

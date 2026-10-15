@@ -159,6 +159,13 @@
     c.restore();
   };
 
+  // front lip of the seat cushion, drawn over sitters so they sink into the couch
+  D.couchFront = function (c, room) {
+    const cx = room.couchX;
+    const g = c.createLinearGradient(0, 246, 0, 272); g.addColorStop(0, '#7a9af0'); g.addColorStop(1, '#5a7ad0');
+    c.fillStyle = g; D.rr(c, cx - 140, 248, 280, 24, 12); c.fill();
+    c.strokeStyle = 'rgba(40,60,120,.35)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(cx, 250); c.lineTo(cx, 270); c.stroke();
+  };
   // swirling portal back to the TV (Level 5 exit)
   D.portal = function (c, x, y, t) {
     const cy = y - 60;
@@ -212,6 +219,6 @@
     c.fillStyle = '#6a8ae0'; D.rr(c, cx - 140, 220, 280, 50, 16); c.fill();
     c.fillStyle = '#4a6ac0'; D.rr(c, cx - 175, 200, 45, 90, 18); c.fill(); D.rr(c, cx + 130, 200, 45, 90, 18); c.fill();
     c.fillStyle = '#3a4a80'; c.fillRect(cx - 140, 290, 12, 14); c.fillRect(cx + 128, 290, 12, 14);
-    return { tvX: tx, tvY: ty, couchX: cx, seatY: 238 };
+    return { tvX: tx, tvY: ty, couchX: cx, seatY: 252 };
   };
 })();
