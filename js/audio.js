@@ -483,9 +483,56 @@
       }
       return { BPM: 140, SD, STEPS, play };
     })();
-    return { L2, L3, L4, L5, Jingle, Victory };
+    // --- stage-2 variants: same world song, a touch faster, plus a countermelody + tambourine ---
+    function alt(base, tr, o) {
+      const k = o.tempo || 1.06, SD = base.SD / k;
+      function play(c, out, t, i) {
+        base.play(c, out, t, i);
+        const bar = i >> 3, pos = i & 7, chord = CHORDS[bar & 3].map(n => n + tr);
+        if (pos === 2 || pos === 5 || pos === 7) o.counter(c, out, chord[(bar + pos) % 3] + 12, t, SD);
+        if (pos % 2 === 1) nz(c, out, t, 0.035, 0.08, 'bandpass', 7000);   // tambourine
+      }
+      return { BPM: base.BPM * k, SD, STEPS: base.STEPS, play };
+    }
+    // --- boss versions: the motif in C minor over Cm-Ab-Bb-G, driving bass and four-on-the-floor ---
+    const MINOR = { 76: 75, 81: 80, 83: 82, 71: 70 };
+    const BCH = [[60, 63, 67], [56, 60, 63], [58, 62, 65], [55, 59, 62]], BROOT = [36, 32, 34, 31];
+    function boss(tr, o) {
+      const bpm = o.bpm || 168, SD = 60 / bpm / 2, STEPS = 64;
+      function play(c, out, t, i) {
+        const bar = i >> 3, pos = i & 7, k = bar & 3, second = bar >= 4, m = i % 32;
+        for (const [st, n, d] of MEL) if (st === m) {
+          const nn = (MINOR[n] || n) + tr;
+          lead(c, out, nn, t, d * SD * 0.9, 0.11, second ? 4200 : 2600);
+          o.layer(c, out, nn, t, d * SD, second);
+        }
+        const root = BROOT[k] + tr;
+        pluck(c, out, root + (pos % 2 ? 12 : 0), t, 0.32, SD * 0.8, 'sawtooth', 1600, 160);
+        if (pos === 0) pad(c, out, BCH[k].map(n => n + tr), t, SD * 8.2, 0.035, 1200);
+        if (pos % 2 === 0) kick(c, out, t, 0.7);
+        if (pos === 2 || pos === 6) nz(c, out, t, 0.24, 0.14, 'bandpass', 1500);
+        nz(c, out, t, pos % 2 ? 0.035 : 0.06, 0.03, 'highpass', 8500);
+        if (pos === 0 && bar === 0) nz(c, out, t, 0.25, 1.0, 'highpass', 3500);   // crash
+        if (bar === 7 && pos >= 4) nz(c, out, t + SD / 2, 0.14, 0.08, 'bandpass', 1800);
+      }
+      return { BPM: bpm, SD, STEPS, play };
+    }
+    const B = {
+      level1b: alt(window.RNRLevel1Song, 0, { counter: (c, out, n, t, SD) => marimba(c, out, n, t, 0.18, SD * 1.2) }),
+      level2b: alt(L2, 5, { counter: (c, out, n, t, SD) => chip(c, out, n + 12, t, 0.035, SD * 0.8, 6000), tempo: 1.08 }),
+      level3b: alt(L3, 2, { counter: (c, out, n, t, SD) => bell(c, out, n + 12, t, 0.06, 0.3) }),
+      level4b: alt(L4, -2, { counter: (c, out, n, t, SD) => bell(c, out, n + 12, t, 0.07, 0.5), tempo: 1.04 }),
+      level5b: alt(L5, 7, { counter: (c, out, n, t, SD) => marimba(c, out, n, t, 0.15, SD) }),
+      boss1: boss(0, { bpm: 160, layer: (c, out, n, t, d) => marimba(c, out, n, t, 0.25, d) }),
+      boss2: boss(5, { bpm: 168, layer: (c, out, n, t, d, s) => bell(c, out, n + 12, t, 0.08, 0.5) }),
+      boss3: boss(2, { bpm: 156, layer: (c, out, n, t, d) => pluck(c, out, n - 12, t, 0.1, d, 'square', 3000, 600) }),
+      boss4: boss(-2, { bpm: 150, layer: (c, out, n, t, d) => chorus(c, out, n - 12, t, 0.07, d) }),
+      boss5: boss(7, { bpm: 176, layer: (c, out, n, t, d) => chip(c, out, n + 12, t, 0.05, d * 0.6, 7000) })
+    };
+    return { L2, L3, L4, L5, Jingle, Victory, B };
   })();
   SONGS.level2 = { custom: Vars.L2 }; SONGS.level3 = { custom: Vars.L3 }; SONGS.level4 = { custom: Vars.L4 }; SONGS.level5 = { custom: Vars.L5 };
+  for (const k in Vars.B) SONGS[k] = { custom: Vars.B[k] };
   SONGS.complete = { custom: Vars.Jingle }; SONGS.victory = { custom: Vars.Victory };
   window.RNRSongs = SONGS;
 

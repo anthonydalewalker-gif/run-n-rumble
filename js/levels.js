@@ -10,10 +10,10 @@
   // blocks: floating platforms [x, topY, width] (head-bumpable).
   // bugs: walkers [x, skin?]   birds: swoopers [triggerX, skin?] (swoop in when you reach triggerX)
   // snakes: [x]   rocks: [x0, x1] zones where things fall (skin = rockSkin)   exit: {x, kind}
-  const LEVELS = [
+  const BASE = [
     {
-      id: 1, name: 'Green Hills', subtitle: 'On the ground', theme: 'hills', music: 'level1',
-      time: 300, length: 9800, exit: { x: 9550, kind: 'tree' },
+      id: '1-1', world: 0, stage: 0, name: 'Meadow', subtitle: 'Sunny green hills', theme: 'hills', music: 'level1',
+      time: 300, length: 9800, exit: { x: 9550, kind: 'flag' },
       ground: [[0, 1100, 300], [1170, 1900, 300], [1900, 2600, 270], [2690, 3600, 300], [3680, 4600, 300],
                [4600, 5400, 270], [5490, 6600, 300], [6690, 7800, 300], [7880, 8700, 270], [8700, 9800, 300]],
       blocks: [[1450, 215, 130], [2150, 190, 120], [3300, 215, 110], [4900, 175, 120], [6900, 215, 130], [8000, 175, 120]],
@@ -25,8 +25,8 @@
       power: { first: 6, min: 9, max: 15 }
     },
     {
-      id: 2, name: 'Cloud Kingdom', subtitle: 'In the clouds', theme: 'clouds', music: 'level2',
-      time: 300, length: 10400, exit: { x: 10120, kind: 'rainbow' },
+      id: '2-1', world: 1, stage: 0, name: 'Sky Trails', subtitle: 'Hop across the clouds', theme: 'clouds', music: 'level2',
+      time: 300, length: 10400, exit: { x: 10120, kind: 'flag' },
       ground: [[0, 900, 290], [960, 1700, 280], [1880, 2600, 290], [2760, 3500, 275], [3560, 4300, 280], [4500, 5300, 290],
                [5380, 6100, 270], [6300, 7000, 280], [7170, 7900, 265], [7960, 8700, 280], [8900, 10400, 290]],
       blocks: [[1300, 200, 100], [3100, 180, 100], [5700, 185, 100], [8200, 190, 100], [9400, 190, 110]],
@@ -42,8 +42,8 @@
       power: { first: 5, min: 8, max: 14 }
     },
     {
-      id: 3, name: 'Rooftop City', subtitle: 'Streets and rooftops', theme: 'city', music: 'level3',
-      time: 300, length: 10500, exit: { x: 10250, kind: 'pier' },
+      id: '3-1', world: 2, stage: 0, name: 'Streets', subtitle: 'Streets and rooftops', theme: 'city', music: 'level3',
+      time: 300, length: 10500, exit: { x: 10250, kind: 'flag' },
       bugSkin: 'trash', birdSkin: 'pigeon', rockSkin: 'pot',
       ground: [[0, 900, 300], [960, 1800, 270], [1870, 2600, 250], [2600, 3300, 280], [3380, 4200, 250], [4280, 5100, 280],
                [5100, 5900, 300], [5985, 6800, 265], [6880, 7700, 240], [7700, 8500, 275], [8590, 9400, 250], [9480, 10500, 290]],
@@ -56,8 +56,8 @@
       power: { first: 5, min: 8, max: 14 }
     },
     {
-      id: 4, name: 'Deep Blue Bay', subtitle: 'Docks and deep water', theme: 'water', music: 'level4',
-      time: 300, length: 10500, exit: { x: 10250, kind: 'submarine' },
+      id: '4-1', world: 3, stage: 0, name: 'Docks', subtitle: 'Docks and deep water', theme: 'water', music: 'level4',
+      time: 300, length: 10500, exit: { x: 10250, kind: 'flag' },
       bugSkin: 'crab', birdSkin: 'gull',
       // docks over the water (falling in just means swimming)
       ground: [[0, 700, 250], [860, 1400, 250], [1600, 2200, 250], [2400, 3000, 250], [5750, 6500, 250], [6650, 7300, 250],
@@ -74,8 +74,8 @@
       power: { first: 5, min: 8, max: 13 }
     },
     {
-      id: 5, name: 'Star Station', subtitle: 'Low gravity space', theme: 'space', music: 'level5',
-      time: 300, length: 11000, exit: { x: 10750, kind: 'portal' },
+      id: '5-1', world: 4, stage: 0, name: 'Moon Base', subtitle: 'Low gravity on the moon', theme: 'space', music: 'level5',
+      time: 300, length: 11000, exit: { x: 10750, kind: 'flag' },
       gravity: 0.45, jumpScale: 0.72,
       bugSkin: 'alien', birdSkin: 'ufo', rockSkin: 'meteor',
       ground: [[0, 900, 300], [1050, 1800, 290], [1960, 2700, 270], [2880, 3600, 300], [3780, 4500, 260], [4700, 5400, 290],
@@ -88,6 +88,105 @@
       power: { first: 5, min: 8, max: 13 }
     }
   ];
+
+  // ---------- 15-level campaign: 5 worlds x 3 stages (stage 3 = boss) ----------
+  const WORLDS = [
+    { name: 'Green Hills', theme: 'hills' }, { name: 'Cloud Kingdom', theme: 'clouds' }, { name: 'Rooftop City', theme: 'city' },
+    { name: 'Deep Blue Bay', theme: 'water' }, { name: 'Star Station', theme: 'space' }
+  ];
+  const range = (a, b, step, f) => { const r = []; for (let x = a; x < b; x += step) r.push(f ? f(x) : [x]); return r; };
+  const STAGE2 = [
+    {
+      id: '1-2', world: 0, stage: 1, name: 'Caves & Mines', subtitle: 'Dark tunnels and crumbling ledges', theme: 'cave', music: 'level1b',
+      time: 300, length: 9000, exit: { x: 8750, kind: 'flag' }, dark: true, birdSkin: 'bat', rockSkin: 'rock',
+      ground: [[0, 900, 300], [1000, 1700, 290], [1900, 2500, 300], [2750, 3400, 280], [3550, 4300, 300], [4600, 5300, 290],
+               [5450, 6200, 300], [6500, 7100, 280], [7300, 8000, 300], [8150, 9000, 300]],
+      crumble: [[1740, 272, 110], [2560, 262, 130], [4340, 280, 90], [4465, 268, 85], [6250, 272, 95], [6380, 262, 80], [7150, 276, 100]],
+      blocks: [[1300, 200, 110], [3000, 195, 100], [5000, 190, 110], [7600, 195, 110]],
+      bugs: [[700], [1250], [1500], [2100], [2300], [2950], [3200], [3800], [4100], [4800], [5100], [5700], [6000], [6700], [7500], [7800], [8400]],
+      birds: [[1100], [1950], [2800], [3600], [4500], [5300], [6100], [6900], [7700], [8300]],
+      snakes: [[3300], [6950]],
+      rocks: [[2000, 2500], [5500, 6100], [7400, 7950]],
+      power: { first: 6, min: 9, max: 15 }
+    },
+    {
+      id: '2-2', world: 1, stage: 1, name: 'Storm Peaks', subtitle: 'Lightning, wind and mountain tops', theme: 'peaks', music: 'level2b',
+      time: 300, length: 10000, exit: { x: 9750, kind: 'flag' },
+      ground: [[0, 900, 300], [1050, 1700, 270], [1900, 2500, 250], [2700, 3300, 280], [3500, 4100, 255], [4300, 4900, 240],
+               [5100, 5800, 270], [6000, 6600, 250], [6800, 7400, 280], [7600, 8200, 255], [8400, 9000, 270], [9200, 10000, 290]],
+      clouds: [[1735, 262, 130, 'drift', { ax: 25, period: 4 }], [2550, 252, 110, 'fade'], [3360, 280, 110, 'bounce'], [4960, 250, 110, 'fade'],
+               [5855, 258, 110, 'drift', { ay: 18, period: 3 }], [7450, 265, 110, 'fade'], [8255, 262, 110, 'bounce']],
+      blocks: [[1350, 170, 100], [4600, 150, 100], [7900, 160, 100]],
+      bugs: [[600], [1300], [2100], [2900], [3100], [3700], [3900], [4500], [5300], [5600], [6200], [6400], [7000], [7800], [8600], [9400], [9600]],
+      birds: [[900], [1800], [2600], [3400], [4200], [5000], [5900], [6700], [7500], [8300], [9100]],
+      snakes: [[4700], [8900]],
+      lightning: [[1000, 2600], [3400, 5000], [6000, 7500], [8400, 9700]],
+      wind: [[2600, 4200], [5000, 6800], [7500, 9200]],
+      power: { first: 5, min: 8, max: 14 }
+    },
+    {
+      id: '3-2', world: 2, stage: 1, name: 'Subway', subtitle: 'Get up on the platforms when trains come!', theme: 'subway', music: 'level3b',
+      time: 300, length: 9600, exit: { x: 9380, kind: 'flag' }, bugSkin: 'trash', birdSkin: 'pigeon',
+      ground: [[0, 2620, 300], [2740, 5440, 300], [5560, 7790, 300], [7910, 9600, 300]],
+      walks: range(420, 9100, 470, x => [x, 222, 290]),
+      trains: [[700, 9100]],
+      blocks: [],
+      bugs: [[800], [1300], [1900], [2300], [2900], [3400], [3900], [4600], [5000], [5700], [6200], [6700], [7300], [8200], [8800]],
+      birds: [[1500], [3000], [4500], [6000], [7500], [8600]],
+      snakes: [[6500]],
+      power: { first: 5, min: 8, max: 13 }
+    },
+    {
+      id: '4-2', world: 3, stage: 1, name: 'Coral Reef', subtitle: 'Swim through the reef - watch for eels!', theme: 'reef', music: 'level4b',
+      time: 300, length: 9200, exit: { x: 9000, kind: 'flag' }, bugSkin: 'crab', birdSkin: 'gull',
+      ground: [[0, 600, 250], [8600, 9200, 250]],
+      seabed: [[-50, 600, 350], [600, 2600, 600], [2600, 3200, 470], [3200, 5600, 610], [5600, 6100, 480], [6100, 8600, 600], [8600, 9250, 350]],
+      water: [[-50, 9250, 272]],
+      coral: [[900, 520, 60], [1300, 470, 50], [1800, 530, 70], [2200, 480, 50], [2750, 420, 70], [3500, 500, 60], [3950, 450, 50], [4400, 520, 70],
+              [4900, 470, 60], [5300, 530, 50], [5750, 430, 70], [6400, 500, 60], [6900, 460, 50], [7400, 520, 70], [7900, 470, 60], [8300, 520, 50]],
+      eels: [[1550, 560], [2400, 560], [3700, 570], [4650, 570], [6650, 560], [7650, 560], [8150, 560]],
+      fish: range(800, 8500, 420),
+      jellies: [[1100, 420], [1700, 380], [2900, 360], [3300, 430], [4200, 400], [5000, 420], [5900, 380], [6300, 440], [7100, 400], [7800, 430]],
+      bugs: [[400], [8800]],
+      birds: [[300], [8700]],
+      power: { first: 6, min: 9, max: 14 }
+    },
+    {
+      id: '5-2', world: 4, stage: 1, name: 'Asteroid Belt', subtitle: 'Floating rocks and fast meteors', theme: 'asteroids', music: 'level5b',
+      time: 300, length: 10000, exit: { x: 9750, kind: 'flag' }, gravity: 0.45, jumpScale: 0.72,
+      bugSkin: 'alien', birdSkin: 'ufo', rockSkin: 'meteor', rockRate: [0.6, 1.3], fastMeteors: true,
+      ground: [[0, 700, 300], [1300, 1700, 280], [2400, 2800, 290], [3500, 3900, 270], [4600, 5000, 300], [5700, 6100, 280],
+               [6800, 7200, 290], [7900, 8300, 270], [9000, 10000, 300]],
+      floaters: [[810, 262, 120], [1010, 240, 120, { ax: 40, period: 4 }], [1190, 268, 100],
+                 [1810, 255, 120, { ay: 30, period: 3 }], [2020, 232, 110], [2220, 262, 120, { ax: 30, period: 5 }],
+                 [2910, 262, 110], [3110, 236, 120, { ay: 25, period: 3.5 }], [3320, 252, 110],
+                 [4010, 245, 120], [4220, 222, 110, { ax: 40, period: 4 }], [4430, 262, 110],
+                 [5110, 262, 120, { ax: 30, period: 4 }], [5320, 240, 110], [5520, 262, 110, { ay: 25, period: 3 }],
+                 [6210, 255, 120], [6420, 232, 110, { ax: 35, period: 4.5 }], [6620, 262, 110],
+                 [7310, 262, 120, { ay: 30, period: 3.2 }], [7520, 238, 110], [7720, 252, 110, { ax: 30, period: 4 }],
+                 [8410, 248, 120], [8620, 226, 110, { ay: 25, period: 3.6 }], [8820, 262, 120]],
+      bugs: [[500], [1500], [2600], [3700], [4800], [5900], [7000], [8100], [9300], [9600]],
+      birds: [[1000], [2200], [3300], [4400], [5500], [6600], [7700], [8800]],
+      rocks: [[900, 3500], [4000, 6800], [7000, 9500]],
+      power: { first: 5, min: 8, max: 13 }
+    }
+  ];
+  const BOSSES = [
+    { id: '1-3', world: 0, stage: 2, name: 'Potato King', subtitle: 'Stomp his head 3 times!', theme: 'hills', music: 'boss1', boss: 'potato', exit: { x: 910, kind: 'tree' },
+      ground: [[0, 1000, 300]] },
+    { id: '2-3', world: 1, stage: 2, name: 'Thunder Bird', subtitle: 'Free Pipple from the storm bird!', theme: 'clouds', music: 'boss2', boss: 'thunder', exit: { x: 910, kind: 'rainbow' },
+      ground: [[0, 1000, 290]] },
+    { id: '3-3', world: 2, stage: 2, name: 'Pigeon Boss', subtitle: 'Knock the Pigeon Boss off his crane!', theme: 'city', music: 'boss3', boss: 'pigeon', exit: { x: 910, kind: 'pier' },
+      bugSkin: 'trash', rockSkin: 'pot', ground: [[0, 1000, 300]] },
+    { id: '4-3', world: 3, stage: 2, name: 'Giant Crab', subtitle: 'Free Squib from the sunken ship!', theme: 'water', music: 'boss4', boss: 'crab', exit: { x: 920, kind: 'submarine' },
+      bugSkin: 'crab', ground: [[0, 150, 250]], seabed: [[-50, 1050, 520]], water: [[-50, 1050, 272]], sunken: true },
+    { id: '5-3', world: 4, stage: 2, name: 'Glitch Monster', subtitle: 'Beat the soda glitch and go home!', theme: 'space', music: 'boss5', boss: 'glitch', exit: { x: 910, kind: 'portal' },
+      gravity: 0.45, jumpScale: 0.72, bugSkin: 'alien', rockSkin: 'meteor', ground: [[0, 1000, 300]] }
+  ];
+  BOSSES.forEach(b => Object.assign(b, { time: 300, length: 1000, power: { first: 7, min: 10, max: 15 } }));
+  const LEVELS = [];
+  for (let w = 0; w < 5; w++) LEVELS.push(BASE[w], STAGE2[w], BOSSES[w]);
+  LEVELS.forEach((L, i) => { L.idx = i; L.worldName = WORLDS[L.world].name; });
 
   // ---------- themes ----------
   function hash(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
@@ -308,7 +407,139 @@
     }
   };
 
+  // ---------- stage-2 themes ----------
+  Object.assign(THEMES, {
+    cave: {
+      solid: 'earth', dirtBase: '#5a4658', grass: ['#a89ab8', '#6a5a7a'], card: ['#6a5a8a', '#2a2238'],
+      background(c, camX, VW, VH, t) {
+        sky(c, VW, VH, '#1a1424', '#3a2c3e');
+        // far rock wall with glowing crystals
+        hillLayer(c, camX, VW, VH, 0.15, 120, 60, 0.006, 3, 'rgba(70,56,86,1)', 'rgba(40,32,52,1)');
+        const off = camX * 0.15;
+        for (let k = Math.floor(off / 90) - 1; k < (off + VW) / 90 + 1; k++) {
+          if (hash(k + 11) < 0.55) continue;
+          const x = k * 90 - off + hash(k) * 50, y = 150 + hash(k + 2) * 120, gl = 0.5 + 0.5 * Math.sin(t * 2 + k);
+          c.fillStyle = 'rgba(120,220,255,' + (0.25 + gl * 0.35) + ')';
+          c.beginPath(); c.moveTo(x, y - 12); c.lineTo(x + 5, y); c.lineTo(x - 5, y); c.fill();
+          c.fillStyle = 'rgba(200,120,255,' + (0.2 + gl * 0.3) + ')'; c.beginPath(); c.moveTo(x + 7, y - 8); c.lineTo(x + 10, y); c.lineTo(x + 4, y); c.fill();
+        }
+        // mine supports
+        const o2 = camX * 0.45;
+        for (let k = Math.floor(o2 / 260) - 1; k < (o2 + VW) / 260 + 1; k++) {
+          const x = k * 260 - o2;
+          c.fillStyle = '#4a3420'; c.fillRect(x, 60, 10, 260); c.fillRect(x + 120, 60, 10, 260); c.fillRect(x - 6, 54, 142, 12);
+          const lx = x + 65, ly = 82, fl = 0.8 + 0.2 * Math.sin(t * 9 + k * 3);
+          const lg = c.createRadialGradient(lx, ly, 2, lx, ly, 60 * fl); lg.addColorStop(0, 'rgba(255,200,100,.45)'); lg.addColorStop(1, 'rgba(255,200,100,0)');
+          c.fillStyle = lg; c.fillRect(lx - 60, ly - 60, 120, 120);
+          c.fillStyle = '#ffd27a'; c.beginPath(); c.arc(lx, ly, 4, 0, 7); c.fill();
+          c.strokeStyle = '#2a1a10'; c.lineWidth = 1; c.beginPath(); c.moveTo(lx, 66); c.lineTo(lx, ly - 4); c.stroke();
+        }
+        // stalactites along the ceiling
+        c.fillStyle = '#2a2034';
+        const o3 = camX * 0.6;
+        for (let k = Math.floor(o3 / 40) - 1; k < (o3 + VW) / 40 + 1; k++) {
+          const x = k * 40 - o3, h = 10 + hash(k + 99) * 40;
+          c.beginPath(); c.moveTo(x - 14, 0); c.lineTo(x + 14, 0); c.lineTo(x + 2, h); c.closePath(); c.fill();
+        }
+      },
+      decor(c, d, t) {
+        if (d.kind === 'flower') { // glowing crystal
+          const gl = 0.6 + 0.4 * Math.sin(t * 3 + d.x);
+          c.fillStyle = 'rgba(120,220,255,' + gl + ')'; c.beginPath(); c.moveTo(d.x, d.y - 16); c.lineTo(d.x + 5, d.y); c.lineTo(d.x - 5, d.y); c.fill();
+          c.fillStyle = 'rgba(220,150,255,' + gl + ')'; c.beginPath(); c.moveTo(d.x + 6, d.y - 10); c.lineTo(d.x + 9, d.y); c.lineTo(d.x + 3, d.y); c.fill();
+        } else if (d.kind === 'bush') { // ore cart
+          c.fillStyle = '#6a6a7a'; D.rr(c, d.x - 12, d.y - 14, 24, 10, 2); c.fill();
+          c.fillStyle = '#ffd21f'; c.beginPath(); c.arc(d.x - 4, d.y - 14, 3, 0, 7); c.arc(d.x + 3, d.y - 15, 3.5, 0, 7); c.fill();
+          c.fillStyle = '#222'; c.beginPath(); c.arc(d.x - 7, d.y - 3, 3, 0, 7); c.arc(d.x + 7, d.y - 3, 3, 0, 7); c.fill();
+        } else { c.fillStyle = '#c8b89a'; c.beginPath(); c.arc(d.x, d.y - 4, 4, 0, 7); c.fill(); c.fillStyle = '#7a6a5a'; c.fillRect(d.x - 1, d.y - 4, 2, 4); }
+      }
+    },
+    peaks: {
+      solid: 'earth', dirtBase: '#6e7290', grass: ['#ffffff', '#c8d6f0'], card: ['#5a6aa0', '#c8d0f0'],
+      background(c, camX, VW, VH, t) {
+        sky(c, VW, VH, '#3a3a6a', '#9a90c0');
+        // stormy clouds
+        for (let i = 0; i < 8; i++) { let x = (hash(i + 70) * 1900 - (camX * 0.1 + t * 14)) % 1900; if (x < -180) x += 1900; cloud(c, x, 30 + hash(i + 71) * 60, 1 + hash(i + 72) * 0.7, 'rgba(90,90,130,.85)'); }
+        if (Math.sin(t * 1.3) > 0.985) { c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(0, 0, VW, VH); }
+        // far mountains with snow caps
+        const mtn = (par, base, h, gap, col, seed) => {
+          const off = camX * par;
+          for (let k = Math.floor(off / gap) - 1; k < (off + VW) / gap + 2; k++) {
+            const x = k * gap - off + hash(k + seed) * gap * 0.3, hh = h * (0.6 + hash(k * 2 + seed) * 0.5);
+            c.fillStyle = col; c.beginPath(); c.moveTo(x - gap * 0.7, base); c.lineTo(x, base - hh); c.lineTo(x + gap * 0.7, base); c.fill();
+            c.fillStyle = 'rgba(255,255,255,.85)'; c.beginPath(); c.moveTo(x - hh * 0.18, base - hh * 0.75); c.lineTo(x, base - hh); c.lineTo(x + hh * 0.18, base - hh * 0.75); c.lineTo(x + 4, base - hh * 0.8); c.fill();
+          }
+        };
+        mtn(0.12, 290, 200, 220, '#6a6a9a', 1);
+        mtn(0.3, 330, 170, 180, '#4a4a78', 5);
+      },
+      decor(c, d, t) {
+        if (d.kind === 'flower') { c.fillStyle = '#e8f0ff'; D.star(c, d.x, d.y - 5, 4, t * 0.3); c.fill(); }   // ice crystal
+        else if (d.kind === 'bush') { c.fillStyle = '#3a6a4a'; c.beginPath(); c.moveTo(d.x, d.y - 22); c.lineTo(d.x + 9, d.y); c.lineTo(d.x - 9, d.y); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.moveTo(d.x, d.y - 22); c.lineTo(d.x + 4, d.y - 12); c.lineTo(d.x - 4, d.y - 12); c.fill(); }   // snowy pine
+        else { c.fillStyle = '#8a8aa8'; c.beginPath(); c.arc(d.x, d.y, 6, Math.PI, 0); c.fill(); }
+      }
+    },
+    subway: {
+      solid: 'subway', card: ['#e0a040', '#3a3a4a'],
+      background(c, camX, VW, VH, t) {
+        sky(c, VW, VH, '#2a2a36', '#4a4a58');
+        // tiled tunnel wall
+        const off = camX * 0.5;
+        c.fillStyle = '#d8d4c8'; c.fillRect(0, 70, VW, 150);
+        c.strokeStyle = 'rgba(120,110,100,.35)'; c.lineWidth = 1;
+        for (let y = 70; y < 220; y += 12) { c.beginPath(); c.moveTo(0, y); c.lineTo(VW, y); c.stroke(); }
+        for (let x = -(off % 24); x < VW; x += 24) { c.beginPath(); c.moveTo(x, 70); c.lineTo(x, 220); c.stroke(); }
+        c.fillStyle = '#2f7fe0'; c.fillRect(0, 120, VW, 10);
+        for (let k = Math.floor(off / 420) - 1; k < (off + VW) / 420 + 1; k++) {
+          const x = k * 420 - off;
+          // station sign + poster
+          c.fillStyle = '#1b2a4a'; D.rr(c, x + 40, 84, 120, 26, 4); c.fill();
+          c.fillStyle = '#fff'; c.font = 'bold 13px ' + D.FONT; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(['RUMBLE ST', 'TUBBY AVE', 'DASH SQ', 'SODA PARK'][((k % 4) + 4) % 4], x + 100, 97);
+          c.fillStyle = ['#ff6a8a', '#ffd21f', '#6ad0ff'][((k % 3) + 3) % 3]; c.fillRect(x + 250, 140, 60, 70); c.fillStyle = 'rgba(255,255,255,.6)'; c.fillRect(x + 258, 150, 44, 10); c.fillRect(x + 258, 168, 30, 6);
+          c.fillStyle = '#3a3a48'; c.fillRect(x + 200, 70, 8, 160);
+        }
+        // ceiling lights
+        c.fillStyle = '#3a3a48'; c.fillRect(0, 0, VW, 70);
+        for (let k = Math.floor(off / 160) - 1; k < (off + VW) / 160 + 1; k++) {
+          const x = k * 160 - off;
+          c.fillStyle = '#fff8d0'; c.fillRect(x, 60, 60, 6);
+          const lg = c.createLinearGradient(0, 66, 0, 160); lg.addColorStop(0, 'rgba(255,248,200,.25)'); lg.addColorStop(1, 'rgba(255,248,200,0)');
+          c.fillStyle = lg; c.beginPath(); c.moveTo(x, 66); c.lineTo(x + 60, 66); c.lineTo(x + 90, 160); c.lineTo(x - 30, 160); c.fill();
+        }
+        c.fillStyle = '#1e1e28'; c.fillRect(0, 220, VW, VH);
+      },
+      decor(c, d, t) {
+        if (d.kind === 'flower') { c.fillStyle = '#c8a040'; c.fillRect(d.x - 1, d.y - 8, 2, 8); }
+        else if (d.kind === 'bush') { c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(d.x - 10, d.y - 2, 20, 2); }
+      }
+    },
+    reef: {
+      solid: 'water', card: ['#3ad0c0', '#1a3f8a'],
+      background(c, camX, VW, VH, t) {
+        THEMES.water.background(c, camX, VW, VH, t);
+        c.fillStyle = 'rgba(40,180,200,.25)'; c.fillRect(0, 292, VW, VH);
+      },
+      decor(c, d, t) { THEMES.water.decor(c, d, t); }
+    },
+    asteroids: {
+      solid: 'moon', card: ['#5a3aa0', '#1a0a3a'],
+      background(c, camX, VW, VH, t) {
+        THEMES.space.background(c, camX, VW, VH, t);
+        // drifting far asteroids
+        for (let i = 0; i < 14; i++) {
+          const x = ((hash(i + 200) * 2000 - camX * (0.1 + hash(i + 201) * 0.15) - t * 8) % 2000 + 2000) % 2000 - 100;
+          if (x > VW + 40) continue;
+          const y = 40 + hash(i + 202) * 220, r = 6 + hash(i + 203) * 16;
+          c.fillStyle = 'rgba(140,120,180,.55)'; c.beginPath(); c.ellipse(x, y, r, r * 0.8, t * 0.2 + i, 0, 7); c.fill();
+          c.fillStyle = 'rgba(60,50,90,.5)'; c.beginPath(); c.arc(x + r * 0.2, y, r * 0.25, 0, 7); c.fill();
+        }
+      },
+      decor(c, d, t) { THEMES.space.decor(c, d, t); }
+    }
+  });
+
   window.LEVELS = LEVELS;
+  window.WORLDS = WORLDS;
   window.THEMES = THEMES;
   window.hash01 = hash;
 })();
