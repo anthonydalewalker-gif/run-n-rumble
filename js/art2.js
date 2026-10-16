@@ -217,10 +217,16 @@
     const r = o.boss ? 17 : 13;
     c.fillStyle = 'rgba(0,0,0,.25)'; ell(c, x, y + r * 0.7, r, r * 0.4); c.fill();
     const g = c.createRadialGradient(x - r * 0.3, y - r * 0.4, 2, x, y, r);
-    if (o.done) { g.addColorStop(0, '#fff6b0'); g.addColorStop(1, '#e0a000'); } else { g.addColorStop(0, '#ffffff'); g.addColorStop(1, o.boss ? '#e0306e' : '#4a9bf0'); }
+    if (o.locked) { g.addColorStop(0, '#d8dbe2'); g.addColorStop(1, '#7c8394'); } else if (o.done) { g.addColorStop(0, '#fff6b0'); g.addColorStop(1, '#e0a000'); } else { g.addColorStop(0, '#ffffff'); g.addColorStop(1, o.boss ? '#e0306e' : '#4a9bf0'); }
     c.fillStyle = g; circ(c, x, y, r); c.fill();
     c.strokeStyle = o.sel ? '#ffffff' : '#1b2a4a'; c.lineWidth = o.sel ? 4 : 2.5; c.stroke();
     if (o.sel) { c.strokeStyle = 'rgba(255,255,255,' + (0.4 + 0.4 * Math.sin(o.t * 6)) + ')'; c.lineWidth = 2; circ(c, x, y, r + 6); c.stroke(); }
+    if (o.locked) { // padlock
+      c.strokeStyle = '#2a3142'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y - 3, 4.5, Math.PI, 0); c.stroke();
+      c.fillStyle = '#ffd21f'; c.fillRect(x - 6.5, y - 3, 13, 10); c.strokeStyle = '#2a3142'; c.lineWidth = 1.5; c.strokeRect(x - 6.5, y - 3, 13, 10);
+      c.fillStyle = '#2a3142'; c.fillRect(x - 1, y, 2, 4);
+      return;
+    }
     if (o.boss) { // skull-ish crown icon
       c.fillStyle = '#ffe14a'; c.beginPath(); c.moveTo(x - 8, y - 2); c.lineTo(x - 8, y - 11); c.lineTo(x - 4, y - 6); c.lineTo(x, y - 13); c.lineTo(x + 4, y - 6); c.lineTo(x + 8, y - 11); c.lineTo(x + 8, y - 2); c.fill();
       D.text(c, o.label, x, y + 9, 11, '#fff', { sw: 3 });

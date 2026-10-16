@@ -50,6 +50,16 @@
   const SAVE_KEY = 'rnr_save_v2';
   let save = { high: 0, best: {}, beaten: false };
   try { Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); } catch (e) {}
+  // ---------- progression lock: a stage unlocks once the one before it is cleared ----------
+  let devUnlockAll = false;
+  function isDone(i) { const L = window.LEVELS[i]; return !!(L && save.nodes && save.nodes[L.id]); }
+  function isUnlocked(i) {
+    if (i <= 0 || devUnlockAll) return true;
+    if (i >= window.LEVELS.length) return false;
+    return isDone(i - 1) || isDone(i) || (save.lastNode | 0) >= i;
+  }
+  function maxUnlocked() { let m = 0; for (let i = 1; i < window.LEVELS.length; i++) if (isUnlocked(i)) m = i; return m; }
+  function nextStage() { const n = window.LEVELS.length; for (let i = 0; i < n; i++) if (isUnlocked(i) && !isDone(i)) return i; return Math.min(save.lastNode | 0, n - 1); }
   function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
   // ---------- game state ----------
@@ -1139,9 +1149,11 @@
         Sound.playMusic('title');
         if (act === 'play' || (act === null && anyTap() && G.stateT > 0.3 && Input.taps.every(tp => !(tp.x > VW - 60 && tp.y < 60)))) {
           Sound.play('click'); tryFullscreen();
-          if (!save.storySeen) { G.storyThen = 'play'; setState('story'); } else startRunoff();
+          if (!save.storySeen) { G.storyThen = 'play'; setState('story'); }
+          else if (nextStage() > 0) { G.score = 0; G.levelStartScore = 0; G.mapSel = G.mapPos = nextStage(); startLevel(G.mapSel, true); }
+          else startRunoff();
         }
-        if (act === 'levels') { Sound.play('click'); tryFullscreen(); G.mapSel = G.mapPos = Math.min(save.lastNode || 0, window.LEVELS.length - 1); setState('levels'); }
+        if (act === 'levels') { Sound.play('click'); tryFullscreen(); G.mapSel = G.mapPos = nextStage(); setState('levels'); }
         if (act === 'story') { Sound.play('click'); tryFullscreen(); G.storyThen = 'title'; setState('story'); }
         break;
       case 'story':
@@ -1158,16 +1170,18 @@
         break;
       case 'levels':
         Sound.playMusic('title');
-        if (G.stateT < 0.05 && G.mapSel === undefined) { G.mapSel = save.lastNode || 0; G.mapPos = G.mapSel; }
+        if (G.stateT < 0.05 && G.mapSel === undefined) { G.mapSel = nextStage(); G.mapPos = G.mapSel; }
         G.mapPos = approach(G.mapPos, G.mapSel, dt * 6);
         if (act && act.startsWith('node_')) {
           const i = +act.slice(5);
-          Sound.play('click');
-          if (i === G.mapSel && Math.abs(G.mapPos - i) < 0.05) act = 'play'; else G.mapSel = i;
+          if (!isUnlocked(i)) { Sound.play('deny'); G.lockMsg = { i, t: 1.8 }; act = null; }
+          else { Sound.play('click');
+          if (i === G.mapSel && Math.abs(G.mapPos - i) < 0.05) act = 'play'; else G.mapSel = i; }
         }
+        if (G.lockMsg && (G.lockMsg.t -= dt) <= 0) G.lockMsg = null;
         if (act === 'kleft') G.mapSel = Math.max(0, G.mapSel - 1);
-        if (act === 'kright') G.mapSel = Math.min(window.LEVELS.length - 1, G.mapSel + 1);
-        if (act === 'play') { Sound.play('click'); G.score = 0; G.levelStartScore = 0; G.mapPos = G.mapSel; startLevel(G.mapSel, true); }
+        if (act === 'kright') G.mapSel = Math.min(maxUnlocked(), G.mapSel + 1);
+        if (act === 'play' && isUnlocked(G.mapSel)) { Sound.play('click'); G.score = 0; G.levelStartScore = 0; G.mapPos = G.mapSel; startLevel(G.mapSel, true); }
         if (act === 'back') { Sound.play('click'); setState('title'); }
         break;
       case 'mapwalk':
@@ -1379,7 +1393,7 @@
     const sel = mode === 'walk' ? G.mapTo : G.mapSel;
     LV.forEach((L, i) => {
       const p = mapPos(i), info = nodeInfo(L);
-      D.mapNode(ctx, p.x, p.y, { label: L.id, boss: !!L.boss, done: !!info, stars: info ? info.stars : 0, sel: i === sel, t });
+      D.mapNode(ctx, p.x, p.y, { label: L.id, boss: !!L.boss, done: !!info, locked: !isUnlocked(i), stars: info ? info.stars : 0, sel: i === sel, t });
       uiBtns.push({ id: 'node_' + i, x: p.x - 22, y: p.y - 22, w: 44, h: 50 });
     });
     // Tubby (and friends) walking along the path
@@ -1397,6 +1411,7 @@
     ctx.fillStyle = 'rgba(20,30,60,.6)'; D.rr(ctx, VW / 2 - 190, VH - 54, 380, 44, 14); ctx.fill();
     D.text(ctx, L.id + '  ' + L.name.toUpperCase(), VW / 2 - 70, VH - 40, 14, '#fff', { sw: 3 });
     D.text(ctx, info ? 'BEST ' + info.best : (L.boss ? 'BOSS STAGE' : 'NEW!'), VW / 2 - 70, VH - 22, 11, info ? '#ffde3a' : '#8af05a', { sw: 3 });
+    if (G.lockMsg && mode !== 'walk') { const a = Math.min(1, G.lockMsg.t * 3), q = mapPos(G.lockMsg.i); ctx.globalAlpha = a; ctx.fillStyle = 'rgba(20,30,60,.85)'; D.rr(ctx, clamp(q.x - 110, 6, VW - 226), q.y - 58, 220, 28, 10); ctx.fill(); D.text(ctx, 'Beat the previous level first', clamp(q.x, 116, VW - 116), q.y - 44, 12, '#fff', { sw: 3 }); ctx.globalAlpha = 1; }
     for (let i = 0; i < 3; i++) { ctx.fillStyle = info && i < info.stars ? '#ffd21f' : 'rgba(255,255,255,.3)'; D.star(ctx, VW / 2 + 40 + i * 20, VH - 32, 8, 0); ctx.fill(); }
     if (mode === 'walk') {
       const p = 0.5 + 0.5 * Math.sin(t * 6);
@@ -2240,8 +2255,9 @@
   // ---------- debug / test hooks ----------
   // Only exposed when running on a local dev server (localhost / 127.0.0.1); the public build has no cheats.
   const LOCAL_DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  if (LOCAL_DEV && /[?&]unlockall\b/.test(location.search)) devUnlockAll = true;
   if (LOCAL_DEV) window.RNR = {
-    G, HERO,
+    G, HERO, unlockAll(on) { devUnlockAll = on !== false; }, isUnlocked(i) { return isUnlocked(i); }, nextStage() { return nextStage(); },
     get W() { return W; }, get B() { return W && W.boss; }, mapwalk(a, b) { G.mapFrom = a; G.mapTo = b; G.mapPos = a; G.mapSel = b; setState('mapwalk'); }, map(sel) { G.mapSel = G.mapPos = sel || 0; setState('levels'); }, complete() { win(); }, get P() { return P; }, get state() { return G.state; }, get save() { return save; },
     start(levelIdx) { G.god = false; G.rescue = false; G.rescues = 0; G.rescueAt = []; G.score = 0; G.levelStartScore = 0; startLevel(levelIdx || 0, true); setState('play'); },
     teleport(x) { P.x = x; P.y = (surfaceAt(x) || 300) - 1; P.vy = 0; W.camX = clamp(x - VW * 0.38, 0, W.def.length - VW); },
