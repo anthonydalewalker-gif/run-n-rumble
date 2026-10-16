@@ -1314,7 +1314,7 @@
     ctx.restore();
     uiBtns.push({ id: 'play', x: VW / 2 - 140, y: 180, w: 280, h: 44, primary: true });
     if (save.high > 0) D.text(ctx, 'HIGH SCORE ' + save.high, VW / 2, 338, 14, '#fff', { sw: 4 });
-    D.text(ctx, 'Created by Walker Games', VW / 2, VH - 8, 10, 'rgba(255,255,255,.9)', { sw: 3 });
+    D.text(ctx, 'Created by A.D Walker Builds', VW / 2, VH - 8, 10, 'rgba(255,255,255,.9)', { sw: 3 });
     button('levels', 14 + SAFE_L, VH - 50, 110, 38, 'MAP', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
     button('story', VW - 124 - SAFE_R, VH - 50, 110, 38, 'STORY', { col: ['#ff9ab8', '#e0306e'], size: 14 });
     iconButton('mute', VW - 30 - SAFE_R, 28, 17, muteIcon);
@@ -1443,7 +1443,7 @@
     D.text(ctx, 'YOU WIN!', VW / 2, 52, 44, '#ffde3a', { sw: 9 });
     D.text(ctx, 'Tubby Dash rescued his friends and made it home!', VW / 2, 92, 16, '#fff', { sw: 4 });
     D.text(ctx, 'FINAL SCORE  ' + G.score, VW / 2, 124, 22, '#8af05a', { sw: 5 });
-    D.text(ctx, 'Created by Walker Games - thanks for playing!', VW / 2, 172, 11, '#fff', { sw: 3 });
+    D.text(ctx, 'Created by A.D Walker Builds - thanks for playing!', VW / 2, 172, 11, '#fff', { sw: 3 });
     D.text(ctx, G.score >= save.high ? '★ NEW HIGH SCORE ★' : 'HIGH SCORE ' + save.high, VW / 2, 150, 13, '#fff', { sw: 3 });
     const hop = Math.abs(Math.sin(t * 6)) * 34;
     ctx.fillStyle = 'rgba(0,0,0,.15)'; D.ell(ctx, VW / 2, 301, 34 - hop * 0.5, 5); ctx.fill();

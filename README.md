@@ -17,4 +17,4 @@ Plain HTML5 Canvas and JavaScript. There is no build step and no libraries. A se
 Code is in `js/`: `game.js` (engine, bosses, map, screens), `levels.js` (level data), `draw.js`/`art.js`/`art2.js`/`friends.js` (artwork), `audio.js`, `input.js`.
 Debug hooks (`window.RNR`) only exist when the game is served from localhost.
 
-Created by Walker Games.
+Created by A.D Walker Builds.
