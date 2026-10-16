@@ -74,6 +74,7 @@
   function setState(s) {
     // Entering gameplay: ignore any finger that was already down (e.g. the one that tapped PLAY/RETRY).
     if ((s === 'intro' || s === 'play') && ['title', 'levels', 'paused', 'gameover', 'complete', 'victory', 'cutscene', 'runoff', 'story', 'mapwalk'].includes(G.state)) Input.ignoreBefore = performance.now();
+    if (window.Stats && s !== G.state) { if (s === 'gameover') Stats.gameOver(G.levelIdx); else if (s === 'victory') Stats.victory(); }
     G.state = s; G.stateT = 0;
   }
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -183,6 +184,7 @@
 
   function startLevel(idx, fresh) {
     G.levelIdx = idx;
+    if (fresh) { window.Stats && Stats.stageStart(idx); }
     if (fresh) { G.lives = START_LIVES; G.levelStartScore = G.score; G.levelHurt = false; }
     G.score = G.levelStartScore;
     buildLevel(idx);
@@ -264,7 +266,7 @@
   function die(reason) {
     if (P.dead || W.won) return;
     P.dead = true; P.deadT = 0; P.vy = -520; P.vx = 0; G.levelHurt = true;
-    G.dieReason = reason;
+    G.dieReason = reason; window.Stats && Stats.death(G.levelIdx);
     Sound.play('lifelost');
     setState('dying');
   }
@@ -942,7 +944,7 @@
     pop(B.x, B.y - B.h - 50, B.hp === 1 ? 'ONE MORE HIT!' : B.hp + ' HITS LEFT', '#ff8a5a', 13);
   }
   function bossDefeated(B) {
-    B.gone = true; B.state = 'gone';
+    B.gone = true; B.state = 'gone'; window.Stats && Stats.bossDefeated(G.levelIdx);
     Sound.play('powerup'); Sound.play('smash');
     burst(B.x, B.y - B.h / 2, 40, 'confetti', '#ffe14a', 260); burst(B.x, B.y - B.h / 2, 30, 'spark', '#fff', 240);
     addScore(5000, B.x, B.y - B.h - 10, 'BOSS!');
@@ -1015,7 +1017,7 @@
       if (Cg.fall) { Cg.vy += 900 * dt; Cg.y += Cg.vy * dt; const gy = W.def.boss === 'crab' ? 400 : (surfaceAt(Cg.x, true) || 300); if (Cg.y >= gy) { Cg.y = gy; Cg.fall = false; Sound.play('thud'); burst(Cg.x, gy, 10, 'dust', '#e8dcc0', 90); } }
       const near = W.boss ? (!Cg.held && !Cg.fall && Math.abs(P.x - Cg.x) < 46 && Math.abs(P.y - Cg.y) < 110) : (P.x > Cg.x - 26 && Math.abs(P.y - Cg.y) < 160);
       if (!Cg.freed && !P.dead && near) {
-        Cg.freed = true; Sound.play('powerup'); Sound.play('boing');
+        Cg.freed = true; window.Stats && Stats.friendRescued(Cg.kind); Sound.play('powerup'); Sound.play('boing');
         const F = D.FRIENDS[Cg.kind];
         burst(Cg.x, Cg.y - 34, 26, 'spark', 'rgb(' + F.glow + ')', 220); burst(Cg.x, Cg.y - 34, 10, 'confetti', '#ffe14a', 160);
         addScore(1000, Cg.x, Cg.y - 80, F.name + ' rescued!');
@@ -1053,7 +1055,7 @@
   }
 
   function win() {
-    W.won = true;
+    W.won = true; window.Stats && Stats.stageClear(G.levelIdx);
     Sound.playMusic('complete');
     P.vx = 0; P.vy = -400; P.onGround = false;
     for (let i = 0; i < 60; i++) W.parts.push({ x: W.exit.x + rand(-80, 80), y: rand(40, 140), vx: rand(-60, 60), vy: rand(-120, 20), life: 0, max: rand(1.5, 2.5), kind: 'confetti', col: ['#ff5fa0', '#ffe14a', '#8af05a', '#5ec8ff', '#b65cff'][i % 5], size: rand(3, 5), rot: rand(0, 6), vr: rand(-10, 10) });
