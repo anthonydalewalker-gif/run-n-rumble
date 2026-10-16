@@ -222,9 +222,9 @@
     c.strokeStyle = o.sel ? '#ffffff' : '#1b2a4a'; c.lineWidth = o.sel ? 4 : 2.5; c.stroke();
     if (o.sel) { c.strokeStyle = 'rgba(255,255,255,' + (0.4 + 0.4 * Math.sin(o.t * 6)) + ')'; c.lineWidth = 2; circ(c, x, y, r + 6); c.stroke(); }
     if (o.boss) { // skull-ish crown icon
-      c.fillStyle = '#fff'; c.beginPath(); c.moveTo(x - 9, y + 2); c.lineTo(x - 9, y - 7); c.lineTo(x - 4, y - 2); c.lineTo(x, y - 9); c.lineTo(x + 4, y - 2); c.lineTo(x + 9, y - 7); c.lineTo(x + 9, y + 2); c.fill();
-      D.text(c, o.label, x, y + 8, 8, '#fff', { sw: 2 });
-    } else D.text(c, o.label, x, y + 1, 10, '#fff', { sw: 3 });
+      c.fillStyle = '#ffe14a'; c.beginPath(); c.moveTo(x - 8, y - 2); c.lineTo(x - 8, y - 11); c.lineTo(x - 4, y - 6); c.lineTo(x, y - 13); c.lineTo(x + 4, y - 6); c.lineTo(x + 8, y - 11); c.lineTo(x + 8, y - 2); c.fill();
+      D.text(c, o.label, x, y + 9, 11, '#fff', { sw: 3 });
+    } else D.text(c, o.label, x, y + 1, 11, '#fff', { sw: 3 });
     if (o.stars) for (let i = 0; i < 3; i++) { c.fillStyle = i < o.stars ? '#ffd21f' : 'rgba(255,255,255,.35)'; D.star(c, x - 11 + i * 11, y + r + 9, 5, 0); c.fill(); }
   };
 })();

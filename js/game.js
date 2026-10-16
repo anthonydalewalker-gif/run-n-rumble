@@ -910,7 +910,9 @@
     if (P.dead || W.won) return;
     const pb = playerBox(), bx = B.x - B.w / 2, by = B.y - B.h;
     if (B.kind === 'glitch' && B.alpha < 0.5) return;
-    if (!overlaps(pb.x, pb.y, pb.w, pb.h, bx, by, B.w, B.h)) return;
+    const lift = P.swim ? 18 : 0;   // underwater: a slightly taller target, and any touch on top of the dazed boss counts
+    if (!overlaps(pb.x, pb.y, pb.w, pb.h, bx, by - lift, B.w, B.h + lift)) return;
+    if (P.swim && B.vuln && !(B.inv > 0) && P.y - P.h * 0.5 < by + B.h * 0.5) { bossHit(B, 'stomp'); return; }
     const fromTop = P.vy > 0 && P.prevY <= by + 18;
     const fromBelow = P.vy < 0 && P.prevTop >= by + B.h - 12;
     if ((fromTop || fromBelow || P.pw.power > 0) && B.vuln && !(B.inv > 0)) { bossHit(B, fromBelow ? 'bump' : 'stomp'); return; }
@@ -1298,6 +1300,7 @@
     ctx.restore();
     uiBtns.push({ id: 'play', x: VW / 2 - 140, y: 180, w: 280, h: 44, primary: true });
     if (save.high > 0) D.text(ctx, 'HIGH SCORE ' + save.high, VW / 2, 338, 14, '#fff', { sw: 4 });
+    D.text(ctx, 'Created by Walker Games', VW / 2, VH - 8, 10, 'rgba(255,255,255,.9)', { sw: 3 });
     button('levels', 14 + SAFE_L, VH - 50, 110, 38, 'MAP', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
     button('story', VW - 124 - SAFE_R, VH - 50, 110, 38, 'STORY', { col: ['#ff9ab8', '#e0306e'], size: 14 });
     iconButton('mute', VW - 30 - SAFE_R, 28, 17, muteIcon);
@@ -1425,6 +1428,7 @@
     D.text(ctx, 'YOU WIN!', VW / 2, 52, 44, '#ffde3a', { sw: 9 });
     D.text(ctx, 'Tubby Dash rescued his friends and made it home!', VW / 2, 92, 16, '#fff', { sw: 4 });
     D.text(ctx, 'FINAL SCORE  ' + G.score, VW / 2, 124, 22, '#8af05a', { sw: 5 });
+    D.text(ctx, 'Created by Walker Games - thanks for playing!', VW / 2, 172, 11, '#fff', { sw: 3 });
     D.text(ctx, G.score >= save.high ? '★ NEW HIGH SCORE ★' : 'HIGH SCORE ' + save.high, VW / 2, 150, 13, '#fff', { sw: 3 });
     const hop = Math.abs(Math.sin(t * 6)) * 34;
     ctx.fillStyle = 'rgba(0,0,0,.15)'; D.ell(ctx, VW / 2, 301, 34 - hop * 0.5, 5); ctx.fill();
@@ -2234,7 +2238,9 @@
   requestAnimationFrame(frame);
 
   // ---------- debug / test hooks ----------
-  window.RNR = {
+  // Only exposed when running on a local dev server (localhost / 127.0.0.1); the public build has no cheats.
+  const LOCAL_DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  if (LOCAL_DEV) window.RNR = {
     G, HERO,
     get W() { return W; }, get B() { return W && W.boss; }, mapwalk(a, b) { G.mapFrom = a; G.mapTo = b; G.mapPos = a; G.mapSel = b; setState('mapwalk'); }, map(sel) { G.mapSel = G.mapPos = sel || 0; setState('levels'); }, complete() { win(); }, get P() { return P; }, get state() { return G.state; }, get save() { return save; },
     start(levelIdx) { G.god = false; G.rescue = false; G.rescues = 0; G.rescueAt = []; G.score = 0; G.levelStartScore = 0; startLevel(levelIdx || 0, true); setState('play'); },
