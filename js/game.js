@@ -1121,16 +1121,51 @@
   }
   function anyTap() { return Input.taps.length > 0 || Input.keyTaps.includes('enter'); }
 
-  function tryFullscreen() {
-    const standalone = window.matchMedia && (window.matchMedia('(display-mode: fullscreen)').matches || window.matchMedia('(display-mode: standalone)').matches);
-    if (!Input.touchUsed || standalone || document.fullscreenElement) return;
+  function isStandalone() {
+    return !!((window.matchMedia && (window.matchMedia('(display-mode: fullscreen)').matches || window.matchMedia('(display-mode: standalone)').matches)) || navigator.standalone);
+  }
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function fsSupported() {
+    const el = document.documentElement;
+    return !isStandalone() && !!(el.requestFullscreen || el.webkitRequestFullscreen);
+  }
+  function lockLandscape() {
+    try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) {}
+  }
+  function enterFullscreen() {
     const el = document.documentElement;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (!req) return;
+    if (!req || fsElement()) { lockLandscape(); return; }
     try {
       const p = req.call(el, { navigationUI: 'hide' });
-      if (p && p.then) p.then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); }).catch(() => {});
+      if (p && p.then) p.then(lockLandscape).catch(() => {}); else lockLandscape();
     } catch (e) {}
+  }
+  function exitFullscreen() {
+    const ex = document.exitFullscreen || document.webkitExitFullscreen;
+    if (ex && fsElement()) { try { const p = ex.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  }
+  function toggleFullscreen() { if (fsElement()) exitFullscreen(); else enterFullscreen(); }
+  // auto full screen on the first Start press on phones/tablets (desktop uses the toggle button)
+  function tryFullscreen() {
+    if (!Input.touchUsed || isStandalone()) return;
+    enterFullscreen();
+  }
+  document.addEventListener('fullscreenchange', () => setTimeout(resize, 50));
+  document.addEventListener('webkitfullscreenchange', () => setTimeout(resize, 50));
+  // iPhone Safari has no fullscreen API: one-time tip to Add to Home Screen
+  const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  let iosHint = false;
+  try { iosHint = IS_IOS && !isStandalone() && !document.documentElement.webkitRequestFullscreen && !localStorage.getItem('rnr-ios-hint'); } catch (e) {}
+  function fsIcon(x, y) {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    const a = 7, b = 3, on = !!fsElement();
+    ctx.beginPath();
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      if (!on) { ctx.moveTo(x + sx * a, y + sy * b); ctx.lineTo(x + sx * a, y + sy * a); ctx.lineTo(x + sx * b, y + sy * a); }
+      else { ctx.moveTo(x + sx * b, y + sy * a); ctx.lineTo(x + sx * b, y + sy * b); ctx.lineTo(x + sx * a, y + sy * b); }
+    }
+    ctx.stroke(); ctx.lineCap = 'butt';
   }
 
   // ---------- main update ----------
@@ -1146,10 +1181,12 @@
     const portrait = Input.touchUsed && window.innerHeight > window.innerWidth;
     let act = uiAction();
     if (act === 'mute') { Sound.toggleMute(); }
+    if (act === 'fullscreen') { Sound.play('click'); toggleFullscreen(); }
+    if (iosHint && act === 'ioshint') { iosHint = false; try { localStorage.setItem('rnr-ios-hint', '1'); } catch (e) {} act = null; Input.taps.length = 0; }
     switch (G.state) {
       case 'title':
         Sound.playMusic('title');
-        if (act === 'play' || (act === null && anyTap() && G.stateT > 0.3 && Input.taps.every(tp => !(tp.x > VW - 60 && tp.y < 60)))) {
+        if (act === 'play' || (act === null && anyTap() && G.stateT > 0.3 && Input.taps.every(tp => !(tp.x > VW - 110 && tp.y < 60)))) {
           Sound.play('click'); tryFullscreen();
           if (!save.storySeen) { G.storyThen = 'play'; setState('story'); }
           else if (nextStage() > 0) { G.score = 0; G.levelStartScore = 0; G.mapSel = G.mapPos = nextStage(); startLevel(G.mapSel, true); }
@@ -1320,6 +1357,14 @@
     button('levels', 14 + SAFE_L, VH - 50, 110, 38, 'MAP', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
     button('story', VW - 124 - SAFE_R, VH - 50, 110, 38, 'STORY', { col: ['#ff9ab8', '#e0306e'], size: 14 });
     iconButton('mute', VW - 30 - SAFE_R, 28, 17, muteIcon);
+    if (fsSupported()) iconButton('fullscreen', VW - 72 - SAFE_R, 28, 17, fsIcon);
+    if (iosHint) {
+      const w = 300, x = VW / 2 - w / 2, y = 228;
+      ctx.fillStyle = 'rgba(20,30,60,.8)'; D.rr(ctx, x, y, w, 46, 12); ctx.fill();
+      D.text(ctx, 'For full screen: tap Share, then', VW / 2, y + 18, 12, '#fff', { sw: 3 });
+      D.text(ctx, '"Add to Home Screen"   (tap to hide)', VW / 2, y + 36, 12, '#ffde3a', { sw: 3 });
+      uiBtns.push({ id: 'ioshint', x, y, w, h: 46 });
+    }
   }
   // Seamless start: Tubby dashes off the title, the title slides away and Level 1 fades in under him.
   const RUNOFF_LEN = 1.8;
@@ -1864,6 +1909,7 @@
       button('resume', VW / 2 - 100, p.y + 70, 200, 42, 'RESUME', { primary: true, size: 18 });
       button('restart', VW / 2 - 100, p.y + 120, 200, 38, 'RESTART LEVEL', { col: ['#9fd2ff', '#4a9bf0'], size: 14 });
       button('quit', VW / 2 - 100, p.y + 166, 200, 38, 'QUIT TO MENU', { col: ['#ff9ab8', '#e0306e'], size: 14 });
+      if (fsSupported()) iconButton('fullscreen', VW - 72 - SAFE_R, 28, 17, fsIcon);
     } else if (s === 'lifelost') {
       const p = panel(300, 150);
       D.text(ctx, G.dieReason || 'Ouch!', VW / 2, p.y + 36, 24, '#ffde3a', { sw: 6 });

@@ -1,7 +1,7 @@
 {
   "name": "Run N Rumble",
   "short_name": "Run N Rumble",
-  "description": "A cartoon side-scrolling adventure starring Radish, Orange and Pickle.",
+  "description": "A cartoon side-scrolling adventure starring Tubby Dash.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
