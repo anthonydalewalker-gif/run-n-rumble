@@ -1,87 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Run N Rumble</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#3fb6ff">
-<meta name="description" content="Help Tubby Dash rescue his three friends and escape the video game! A free cartoon platformer with 15 levels and 5 bosses for your phone or browser.">
-<meta name="author" content="A.D Walker Builds">
-<link rel="canonical" href="https://anthonydalewalker-gif.github.io/run-n-rumble/">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Run N Rumble">
-<meta property="og:title" content="Run N Rumble">
-<meta property="og:description" content="Help Tubby Dash rescue his three friends and escape the video game! A free cartoon platformer with 15 levels and 5 bosses for your phone or browser.">
-<meta property="og:url" content="https://anthonydalewalker-gif.github.io/run-n-rumble/">
-<meta property="og:image" content="https://anthonydalewalker-gif.github.io/run-n-rumble/icons/share-1200x630.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Run N Rumble logo with Tubby Dash and his friends Pipple, Lunker and Squib">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Run N Rumble">
-<meta name="twitter:description" content="Help Tubby Dash rescue his three friends and escape the video game! A free cartoon platformer with 15 levels and 5 bosses for your phone or browser.">
-<meta name="twitter:image" content="https://anthonydalewalker-gif.github.io/run-n-rumble/icons/share-1200x630.png">
-<meta name="twitter:image:alt" content="Run N Rumble logo with Tubby Dash and his friends">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Run N Rumble">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<style>
-  html, body {
-    margin: 0; padding: 0; width: 100%; height: 100%;
-    overflow: hidden; background: #1b2a4a;
-    touch-action: none; overscroll-behavior: none;
-    -webkit-user-select: none; user-select: none;
-    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
-    position: fixed; inset: 0;
-    height: 100vh; height: 100dvh;
-  }
-  :fullscreen, :-webkit-full-screen { background: #1b2a4a; }
-  canvas#game { display: block; position: absolute; left: 0; top: 0; touch-action: none; }
-  #rotate {
-    display: none; position: fixed; inset: 0; z-index: 10;
-    background: linear-gradient(#3fb6ff, #8de0ff);
-    color: #fff; font-family: "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
-    text-align: center; flex-direction: column; align-items: center; justify-content: center;
-    text-shadow: 0 3px 0 #1b4a7a;
-  }
-  #rotate .phone {
-    width: 70px; height: 120px; border: 6px solid #fff; border-radius: 14px;
-    margin-bottom: 28px; box-shadow: 0 4px 0 #1b4a7a;
-    animation: turn 2s ease-in-out infinite;
-  }
-  #rotate h1 { font-size: 30px; margin: 0 20px 10px; }
-  #rotate p { font-size: 18px; margin: 0 30px; }
-  @keyframes turn { 0%,25% { transform: rotate(0deg); } 60%,100% { transform: rotate(-90deg); } }
-  @media (orientation: portrait) and (pointer: coarse) {
-    #rotate { display: flex; }
-  }
-  body.force-rotate #rotate { display: flex; }
-</style>
-</head>
-<body>
-<canvas id="game"></canvas>
-<div id="rotate">
-  <div class="phone"></div>
-  <h1>Turn your phone sideways</h1>
-  <p>Run N Rumble plays in landscape mode.</p>
-</div>
-<script src="js/analytics.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/input.js"></script>
-<script src="js/draw.js"></script>
-<script src="js/art.js"></script>
-<script src="js/friends.js"></script>
-<script src="js/art2.js"></script>
-<script src="js/levels.js"></script>
-<script src="js/game.js"></script>
+<html lang="en"><head><meta charset="utf-8">
+<title>Run N Rumble has moved</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="canonical" href="https://www.etingi.com/run-n-rumble/">
+<meta http-equiv="refresh" content="0; url=https://www.etingi.com/run-n-rumble/">
 <script>
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
-  }
+(function(){var t='https://www.etingi.com/run-n-rumble/'+location.search+location.hash;
+if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});}
+if(window.caches){caches.keys().then(function(k){k.forEach(function(n){caches.delete(n);});}).catch(function(){});}
+location.replace(t);})();
 </script>
-</body>
-</html>
+</head><body style="font-family:system-ui;text-align:center;padding:40px">
+<p>Run N Rumble has moved to <a href="https://www.etingi.com/run-n-rumble/">www.etingi.com/run-n-rumble</a>.</p>
+</body></html>
